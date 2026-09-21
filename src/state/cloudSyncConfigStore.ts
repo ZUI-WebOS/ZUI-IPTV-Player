@@ -6,6 +6,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { RELEASE_FEATURES } from '@/config/releaseFeatures';
 
 export type CloudSyncConfig = {
   url: string;
@@ -37,6 +38,7 @@ export const useCloudSyncConfigStore = create<CloudSyncConfigStore>()(
  * Runtime store takes precedence over build-time env vars.
  */
 export function getSupabaseConfig(): CloudSyncConfig | null {
+  if (!RELEASE_FEATURES.cloudSync) return null;
   const { runtimeUrl, runtimeAnonKey } = useCloudSyncConfigStore.getState();
   if (runtimeUrl && runtimeAnonKey) {
     return { url: runtimeUrl, anonKey: runtimeAnonKey };

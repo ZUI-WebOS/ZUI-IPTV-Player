@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFocusable } from '@noriginmedia/norigin-spatial-navigation';
 import { VideoPlayer } from '@/components/player/VideoPlayer';
@@ -23,31 +23,8 @@ import { isEPGStale } from '@/services/epg.service';
 import { useParentalStore } from '@/state/parentalStore';
 import { useLogoCacheStore } from '@/state/logoCacheStore';
 import { Toast } from '@/components/ui/Toast';
-import { useToast } from '@/components/ui/Toast';
-import { useSupabaseRealtime } from '@/hooks/useSupabaseRealtime';
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
-
-// ─── Cloud Sync — App seviyesinde başlatılır ──────────────────────────────────
-// Cihaz uygulama açıldığı anda Supabase'e kaydolur ve realtime kanalını dinler.
-// Onboarding ekranına gelinmesine gerek yoktur.
-
-function useCloudSync() {
-  const { t } = useTranslation();
-  const showToast = useToast((s) => s.show);
-  const onSuccess = useCallback(() => {
-    showToast(t('app.cloud_list_added'));
-    // Filtre her zaman sıfırla — yeni liste gelince tüm kanallar görünsün.
-    usePlaylistStore.getState().setActiveSourceFilter('all');
-    // Kullanıcı Onboarding ekranındaysa kanalleri yükleyip Home'a geç.
-    if (useUIStore.getState().currentScreen === 'onboarding') {
-      usePlaylistStore.getState().loadAllFromDB()
-        .then(() => useUIStore.getState().navigate('home'))
-        .catch(console.error);
-    }
-  }, [showToast, t]);
-  useSupabaseRealtime(onSuccess);
-}
 
 function useInitApp() {
   const navigate = useUIStore((s) => s.navigate);
@@ -110,7 +87,6 @@ function useInitApp() {
 export default function App() {
   const { t } = useTranslation();
   useInitApp();
-  useCloudSync();
   const screen = useUIStore((s) => s.currentScreen);
   const modalOpen = useUIStore((s) => s.modalOpen);
   const closeModal = useUIStore((s) => s.closeModal);

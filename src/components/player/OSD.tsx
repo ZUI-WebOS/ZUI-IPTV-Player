@@ -2,12 +2,14 @@
 // Top bar: channel/film name + clock.
 // Bottom bar: play/pause · rewind · fast-forward · seek bar · time (VOD only).
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFocusable } from '@noriginmedia/norigin-spatial-navigation';
 import { usePlayerStore } from '@/state/playerStore';
+import { useSeriesStore } from '@/state/seriesStore';
 import { useSettingsStore, LANGUAGE_LOCALES } from '@/state/settingsStore';
 import { useToast } from '@/components/ui/Toast';
+import type { PlayerController } from '@/hooks/usePlayerController';
 
 // ─── Clock ───────────────────────────────────────────────────────────────────
 
@@ -60,10 +62,24 @@ function SubtitleToggleOSDBtn() {
     showToast(next ? `🔤 ${t('player.sub_on')}` : `✕ ${t('player.sub_off')}`);
   };
 
-  const { ref, focused } = useFocusable({
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
+  const { ref, focused, setFocus } = useFocusable({
     focusKey: 'OSD_SUBTITLE',
     onEnterPress: toggle,
+    onArrowPress: (direction) => {
+      if (direction === 'up') {
+        setFocusRef.current?.('OSD_TIMELINE');
+        return false;
+      }
+      if (direction === 'left' || direction === 'down') {
+        setFocusRef.current?.('OSD_PLAY_PAUSE');
+        return false;
+      }
+      // There is no control to the right; keep focus on subtitles.
+      return false;
+    },
   });
+  setFocusRef.current = setFocus;
 
   return (
     <button
@@ -110,48 +126,78 @@ function SubtitleToggleOSDBtn() {
 // ─── Bottom controls bar (VOD) ───────────────────────────────────────────────
 
 interface ControlsProps {
-  videoRef: React.RefObject<HTMLVideoElement | null>;
+  controller: PlayerController;
 }
 
-function BottomControls({ videoRef }: ControlsProps) {
+function BottomControls({ controller }: ControlsProps) {
   const { t } = useTranslation();
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const rafRef = useRef<number | null>(null);
-
-  // Poll video state via rAF while visible (more accurate than timeupdate)
-  useEffect(() => {
-    const tick = () => {
-      const v = videoRef.current;
-      if (v) {
-        setCurrentTime(v.currentTime);
-        setDuration(v.duration);
-        setPaused(v.paused);
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    };
-  }, [videoRef]);
-
-  const isLive = !isFinite(duration) || isNaN(duration) || duration === 0;
+  const currentSource = usePlayerStore(s => s.currentSource);
+  const playingEpisode = useSeriesStore(s => s.playingEpisode);
+  const canPlayAdjacentEpisode = useSeriesStore(s => s.canPlayAdjacentEpisode);
+  const playAdjacentEpisode = useSeriesStore(s => s.playAdjacentEpisode);
+  const { currentTime, duration, paused, isLive, canSeek, seeking } = controller;
   const progress = isLive || duration === 0 ? 0 : Math.min(1, currentTime / duration);
 
-  const togglePlay = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) void v.play();
-    else v.pause();
+  const seekToPointer = (clientX: number, track: HTMLElement) => {
+    if (!canSeek) return;
+    const rect = track.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    controller.seekToRatio(ratio);
   };
 
-  const seek = (delta: number) => {
-    const v = videoRef.current;
-    if (!v || isLive) return;
-    v.currentTime = Math.max(0, Math.min(duration, v.currentTime + delta));
-  };
+  const timelineSetFocusRef = useRef<((key: string) => void) | null>(null);
+  const { ref: timelineRef, focused: timelineFocused, setFocus: setTimelineFocus } = useFocusable({
+    focusKey: 'OSD_TIMELINE',
+    focusable: canSeek,
+    onArrowPress: (direction) => {
+      if (direction === 'left') {
+        controller.seekBy(-30);
+        return false;
+      }
+      if (direction === 'right') {
+        controller.seekBy(30);
+        return false;
+      }
+      if (direction === 'down') {
+        timelineSetFocusRef.current?.('OSD_PLAY_PAUSE');
+        return false;
+      }
+      // Timeline is the top row; do not let UP escape the player boundary.
+      return false;
+    },
+  });
+  timelineSetFocusRef.current = setTimelineFocus;
+
+  const isEpisode = Boolean(
+    playingEpisode && currentSource?.id === `series-ep-${playingEpisode.episodeId}`
+  );
+  const canPlayPrevious = isEpisode && canPlayAdjacentEpisode('previous');
+  const canPlayNext = isEpisode && canPlayAdjacentEpisode('next');
+
+  const rewindFocusable = useFocusable({
+    focusKey: 'OSD_REWIND',
+    focusable: canSeek,
+    onEnterPress: () => controller.seekBy(-10),
+  });
+  const playFocusable = useFocusable({
+    focusKey: 'OSD_PLAY_PAUSE',
+    onEnterPress: controller.togglePlay,
+  });
+  const forwardFocusable = useFocusable({
+    focusKey: 'OSD_FORWARD',
+    focusable: canSeek,
+    onEnterPress: () => controller.seekBy(10),
+  });
+  const previousEpisodeFocusable = useFocusable({
+    focusKey: 'OSD_PREVIOUS_EPISODE',
+    focusable: Boolean(canPlayPrevious),
+    onEnterPress: () => { if (canPlayPrevious) playAdjacentEpisode('previous'); },
+  });
+  const nextEpisodeFocusable = useFocusable({
+    focusKey: 'OSD_NEXT_EPISODE',
+    focusable: Boolean(canPlayNext),
+    onEnterPress: () => { if (canPlayNext) playAdjacentEpisode('next'); },
+  });
 
   return (
     <div className="px-12 pb-8 flex flex-col gap-3">
@@ -162,7 +208,18 @@ function BottomControls({ videoRef }: ControlsProps) {
             {formatTime(currentTime)}
           </span>
           {/* Track */}
-          <div className="flex-1 h-1 rounded-full bg-white/20 relative overflow-hidden">
+          <div
+            ref={timelineRef as React.RefObject<HTMLDivElement>}
+            onClick={(event) => seekToPointer(event.clientX, event.currentTarget)}
+            className={[
+              'flex-1 h-3 rounded-full bg-white/20 relative overflow-hidden cursor-pointer transition-all border',
+              timelineFocused
+                ? 'border-[#E8B567]/70 shadow-[0_0_18px_-5px_#E8B567] scale-y-125'
+                : 'border-transparent',
+              seeking ? 'opacity-75' : '',
+              canSeek ? '' : 'cursor-default opacity-50',
+            ].join(' ')}
+          >
             <div
               className="h-full bg-[#E8B567] rounded-full transition-none"
               style={{ width: `${progress * 100}%` }}
@@ -176,13 +233,43 @@ function BottomControls({ videoRef }: ControlsProps) {
 
       {/* Controls row — subtitle CC button is anchored to the right edge */}
       <div className="relative flex items-center justify-center gap-6">
+        {isEpisode && (
+          <button
+            ref={previousEpisodeFocusable.ref as React.RefObject<HTMLButtonElement>}
+            onClick={() => { if (canPlayPrevious) playAdjacentEpisode('previous'); }}
+            disabled={!canPlayPrevious}
+            className={[
+              'flex flex-col items-center gap-1 transition-all',
+              canPlayPrevious ? 'text-white/70' : 'text-white/20',
+              previousEpisodeFocusable.focused ? 'text-[#E8B567] scale-[1.06]' : '',
+            ].join(' ')}
+          >
+            <div className={[
+              'w-11 h-11 rounded-full border grid place-items-center transition-all',
+              previousEpisodeFocusable.focused ? 'border-[#E8B567]/60 bg-[#E8B567]/10 shadow-[0_0_20px_-6px_#E8B567]' : 'border-white/20',
+            ].join(' ')}>
+              <span className="text-[17px]">|◀</span>
+            </div>
+            <span className="text-[9px] uppercase tracking-[0.16em] font-semibold">
+              {t('player.previous_episode', { defaultValue: 'Önceki Bölüm' })}
+            </span>
+          </button>
+        )}
+
         {/* Rewind 10s */}
         {!isLive && (
           <button
-            onClick={() => seek(-10)}
-            className="flex flex-col items-center gap-1 text-white/70 hover:text-white transition-colors group"
+            ref={rewindFocusable.ref as React.RefObject<HTMLButtonElement>}
+            onClick={() => controller.seekBy(-10)}
+            className={[
+              'flex flex-col items-center gap-1 text-white/70 transition-all group',
+              rewindFocusable.focused ? 'text-[#E8B567] scale-[1.06]' : 'hover:text-white',
+            ].join(' ')}
           >
-            <div className="w-11 h-11 rounded-full border border-white/20 grid place-items-center group-hover:border-white/40 transition-colors">
+            <div className={[
+              'w-11 h-11 rounded-full border grid place-items-center transition-all',
+              rewindFocusable.focused ? 'border-[#E8B567]/60 bg-[#E8B567]/10 shadow-[0_0_20px_-6px_#E8B567]' : 'border-white/20 group-hover:border-white/40',
+            ].join(' ')}>
               <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                 <path d="M12 5V2L7 7l5 5V9c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
                 <text x="50%" y="67%" textAnchor="middle" fontSize="5" fill="currentColor" dy=".1em">10</text>
@@ -194,10 +281,17 @@ function BottomControls({ videoRef }: ControlsProps) {
 
         {/* Play / Pause */}
         <button
-          onClick={togglePlay}
-          className="flex flex-col items-center gap-1.5 group"
+          ref={playFocusable.ref as React.RefObject<HTMLButtonElement>}
+          onClick={controller.togglePlay}
+          className={[
+            'flex flex-col items-center gap-1.5 group transition-transform',
+            playFocusable.focused ? 'scale-[1.08]' : '',
+          ].join(' ')}
         >
-          <div className="w-14 h-14 rounded-full bg-[#E8B567] grid place-items-center shadow-[0_0_28px_-4px_#E8B567] group-hover:scale-[1.08] transition-transform">
+          <div className={[
+            'w-14 h-14 rounded-full bg-[#E8B567] grid place-items-center transition-all',
+            playFocusable.focused ? 'shadow-[0_0_38px_-2px_#E8B567]' : 'shadow-[0_0_28px_-4px_#E8B567] group-hover:scale-[1.08]',
+          ].join(' ')}>
             {paused ? (
               <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-[#0e0b0a] translate-x-[1px]">
                 <path d="M7 4v16l13-8z" />
@@ -216,16 +310,46 @@ function BottomControls({ videoRef }: ControlsProps) {
         {/* Fast-forward 10s */}
         {!isLive && (
           <button
-            onClick={() => seek(10)}
-            className="flex flex-col items-center gap-1 text-white/70 hover:text-white transition-colors group"
+            ref={forwardFocusable.ref as React.RefObject<HTMLButtonElement>}
+            onClick={() => controller.seekBy(10)}
+            className={[
+              'flex flex-col items-center gap-1 text-white/70 transition-all group',
+              forwardFocusable.focused ? 'text-[#E8B567] scale-[1.06]' : 'hover:text-white',
+            ].join(' ')}
           >
-            <div className="w-11 h-11 rounded-full border border-white/20 grid place-items-center group-hover:border-white/40 transition-colors">
+            <div className={[
+              'w-11 h-11 rounded-full border grid place-items-center transition-all',
+              forwardFocusable.focused ? 'border-[#E8B567]/60 bg-[#E8B567]/10 shadow-[0_0_20px_-6px_#E8B567]' : 'border-white/20 group-hover:border-white/40',
+            ].join(' ')}>
               <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                 <path d="M12 5V2l5 5-5 5V9c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
                 <text x="50%" y="67%" textAnchor="middle" fontSize="5" fill="currentColor" dy=".1em">10</text>
               </svg>
             </div>
             <span className="text-[9px] uppercase tracking-[0.2em] font-semibold">+10s</span>
+          </button>
+        )}
+
+        {isEpisode && (
+          <button
+            ref={nextEpisodeFocusable.ref as React.RefObject<HTMLButtonElement>}
+            onClick={() => { if (canPlayNext) playAdjacentEpisode('next'); }}
+            disabled={!canPlayNext}
+            className={[
+              'flex flex-col items-center gap-1 transition-all',
+              canPlayNext ? 'text-white/70' : 'text-white/20',
+              nextEpisodeFocusable.focused ? 'text-[#E8B567] scale-[1.06]' : '',
+            ].join(' ')}
+          >
+            <div className={[
+              'w-11 h-11 rounded-full border grid place-items-center transition-all',
+              nextEpisodeFocusable.focused ? 'border-[#E8B567]/60 bg-[#E8B567]/10 shadow-[0_0_20px_-6px_#E8B567]' : 'border-white/20',
+            ].join(' ')}>
+              <span className="text-[17px]">▶|</span>
+            </div>
+            <span className="text-[9px] uppercase tracking-[0.16em] font-semibold">
+              {t('player.next_episode', { defaultValue: 'Sonraki Bölüm' })}
+            </span>
           </button>
         )}
 
@@ -251,10 +375,10 @@ function BottomControls({ videoRef }: ControlsProps) {
 // ─── Main OSD ─────────────────────────────────────────────────────────────────
 
 interface OSDProps {
-  videoRef: React.RefObject<HTMLVideoElement | null>;
+  controller: PlayerController;
 }
 
-export function OSD({ videoRef }: OSDProps) {
+export function OSD({ controller }: OSDProps) {
   const osdVisible = usePlayerStore((s) => s.osdVisible);
   const currentSource = usePlayerStore((s) => s.currentSource);
   const audioWarning = usePlayerStore((s) => s.audioWarning);
@@ -288,8 +412,11 @@ export function OSD({ videoRef }: OSDProps) {
       </div>
 
       {/* ── Bottom controls ───────────────────────────────────────────────── */}
-      <div className="pointer-events-auto bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-12">
-        <BottomControls videoRef={videoRef} />
+      <div className={[
+        'bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-12',
+        osdVisible ? 'pointer-events-auto' : 'pointer-events-none',
+      ].join(' ')}>
+        <BottomControls controller={controller} />
       </div>
     </div>
   );

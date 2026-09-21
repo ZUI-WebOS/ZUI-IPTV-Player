@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useUIStore } from '@/state/uiStore';
 import { usePlaylistStore } from '@/state/playlistStore';
+import { useSeriesStore } from '@/state/seriesStore';
 
 export function RemoteRouter() {
   const currentScreen = useUIStore((s) => s.currentScreen);
@@ -17,6 +18,12 @@ export function RemoteRouter() {
         e.preventDefault();
         if (modalOpen) {
           closeModal();
+          return;
+        }
+        // EpisodeBrowserModal owns BACK while it is open. Returning here keeps
+        // the global router from navigating Series straight to Home; the modal
+        // listener closes itself and restores focus to SERIES_HERO_INFO.
+        if (currentScreen === 'series' && useSeriesStore.getState().detailsSeriesId) {
           return;
         }
         switch (currentScreen) {

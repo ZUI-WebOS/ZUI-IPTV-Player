@@ -414,14 +414,14 @@ Aynı Node sürümünde ikisi de çalışmıyor. "Altı sakal, üstü bıyık" d
 **Tarih**: 2026-05-17
 **Statü**: Accepted (correction)
 
-**Bağlam**: PROMPT_FAZ_0.md README adımları sadece `ares-setup-device`'tan bahsediyordu. Doğrusu iki adım: önce setup (passphrase ile), sonra `ares-novacom --device tv --getkey` ile SSH anahtarını indirmek. @webos-tools/cli bu olmadan TV ile konuşamıyor.
+**Bağlam**: PROMPT_FAZ_0.md README adımları sadece `ares-setup-device`'tan bahsediyordu. Doğrusu iki adım: önce cihaz metasını parolasız kaydetmek, sonra TV'de Key Server açıkken `ares-novacom --device tv --getkey` ile passphrase girerek SSH anahtarını indirmek. @webos-tools/cli bu olmadan TV ile konuşamıyor.
 
 **Karar**: README adımları güncellenir:
 1. TV'de Dev Mode app: passphrase'i not et
 2. `npm install -g @webos-tools/cli`
-3. `ares-setup-device` (interactive) — device meta + passphrase
+3. `ares-setup-device` (interactive) — device meta; parola boş
 4. **`ares-novacom --device tv --getkey`** — anahtarı indirir
-5. `ares-device-info --device tv` ile bağlantı doğrulama
+5. `ares-device --system-info --device tv` ile bağlantı doğrulama
 6. Deploy
 
 Bu adım PROMPT_FAZ_1.md'de README revizyonu olarak yansıyacak.
@@ -977,6 +977,11 @@ Faz 4A'da workaround: kullanıcı manuel olarak yabancı kanallara tıklamamayı
 **Tarih**: 2026-05-23
 **Statü**: Accepted
 
+> **2026-09-20 yeniden değerlendirme:** Aşağıdaki v1.0 risk kabulü güncel sürüm
+> kararı değildir. Kısa deterministik cihaz anahtarı, üçüncü taraf QR servisine
+> credential taşıyan URL ve bulutta düz metin Xtream bilgileri nedeniyle risk
+> yeniden açılmıştır. Kamuya açık güncel durum: `docs/SECURITY_STATUS.md`.
+
 **Bağlam**: Repo public olduktan sonra Claude Opus 4.7 güvenlik analizi yapıldı. Üç madde tespit edildi; biri kritik (history'de key), biri design hatası (policy), biri kabul edilebilir risk (key derivation). Kararlar burada belgeleniyor.
 
 ---
@@ -1022,3 +1027,53 @@ Faz 4A'da workaround: kullanıcı manuel olarak yabancı kanallara tıklamamayı
 | Serial + anon key | Fiziksel erişim + key | Xtream credentials okunabilir | **Orta** — v1.1'de fix |
 | Policy bypass | — | İmkânsız | **Yok** — RLS server-side enforce |
 | History leak | Commit geçmişi | — | **Yok** — history temiz |
+
+---
+
+## D-037 — İçeriğe Bağlı MKV Seek Uyumluluğu
+
+**Tarih**: 2026-09-20
+**Statü**: Accepted technical debt; remux A/B testi açık
+
+**Bağlam**: Gerçek TV'de test edilen 10 VOD/seri içeriğinin 9'unda timeline ve
+±10 saniye seek çalıştı. Tek başarısız örnekte uygulamanın `currentTime` komutu
+önce kabul edildi, ardından oynatma eski decoder konumuna döndü. Çalışan ve
+çalışmayan örnekler aynı sunucuda MKV ve HTTP 206 byte-range desteğine sahipti.
+
+Container incelemesinde çalışan dosyanın başlangıç `SeekHead` bölümünde `Cues`
+işaretçisi bulundu. Başarısız dosyada `Cues` mevcut olmasına rağmen işaretçisi
+yalnız dosyanın sonundaki `SeekHead` bölümündeydi.
+
+**Karar**:
+
+- Genel player/seek motoru korunur.
+- MKV uzantısına bakılarak seek global olarak kapatılmaz.
+- Başlangıç `SeekHead` yerleşimi kök neden için güçlü hipotezdir, fakat aynı
+  dosyanın remux A/B testi tamamlanmadan kesin neden olarak sunulmaz.
+- Büyük medya transferi, remux veya test sunucusu ayrıca onay gerektirir.
+- Kullanıcıya açık sınırlar `docs/KNOWN_ISSUES.md` içinde tutulur.
+
+---
+
+## D-038 — Temiz Kurulumda webOS CLI 3.2.5 Sabitlemesi
+
+**Tarih**: 2026-09-20
+**Statü**: Accepted
+
+**Bağlam**: LG'nin güncel kurulum sayfası Node.js `14.15.1–16.20.2` aralığını
+önerirken pinsiz NPM kurulumu `@webos-tools/cli@3.2.6` sürümünü çekti. NPM
+metadata'sında `3.2.6` için `engines.node >=20.0.0` tanımlı olduğundan temiz
+Windows 11 VM'de Node 16.20.2 ile `EBADENGINE` oluştu. CLI komutlarının dosya
+olarak kurulması bu kombinasyonu desteklenen hale getirmedi.
+
+NPM metadata karşılaştırması:
+
+- `3.2.3`, `3.2.4`, `3.2.5`: Node `>=14.15.1`
+- `3.2.6`: Node `>=20.0.0`
+
+**Karar**:
+
+- Hazır IPK son kullanıcı akışı Node `16.20.2` ve CLI `3.2.5`e sabitlenir.
+- Kurulumdan önce NPM `dist.integrity` ve `engines.node` alanları doğrulanır.
+- `EBADENGINE` görülen kurulum kabul edilmez.
+- Kaynak build için Node 24 / paketleme için Node 16 ayrımı korunur.

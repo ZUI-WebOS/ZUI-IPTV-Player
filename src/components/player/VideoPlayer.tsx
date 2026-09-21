@@ -1,10 +1,12 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useFocusable } from '@noriginmedia/norigin-spatial-navigation';
+import { useFocusable, FocusContext } from '@noriginmedia/norigin-spatial-navigation';
 import { usePlayerStore } from '@/state/playerStore';
 import { useUIStore } from '@/state/uiStore';
+import { useSeriesStore } from '@/state/seriesStore';
 import { useSettingsStore, SUBTITLE_SIZE_PX } from '@/state/settingsStore';
 import { usePlayer } from '@/hooks/usePlayer';
+import { usePlayerController } from '@/hooks/usePlayerController';
 import { useRemote } from '@/hooks/useRemote';
 import { useAudioWatchdog } from '@/hooks/useAudioWatchdog';
 import { useStreamWatchdog } from '@/hooks/useStreamWatchdog';
@@ -23,17 +25,32 @@ export function VideoPlayer() {
   const currentSource = usePlayerStore((s) => s.currentSource);
   const setSource = usePlayerStore((s) => s.setSource);
   const clearError = usePlayerStore((s) => s.setError);
+  const playingEpisode = useSeriesStore((s) => s.playingEpisode);
+  const canPlayAdjacentEpisode = useSeriesStore((s) => s.canPlayAdjacentEpisode);
+  const playAdjacentEpisode = useSeriesStore((s) => s.playAdjacentEpisode);
 
   const navigate = useUIStore((s) => s.navigate);
   const lastMainScreen = useUIStore((s) => s.lastMainScreen);
 
-  // Spatial nav: Player'da arrow-key focus istemiyoruz — RemoteRouter handle ediyor
-  const { pause, resume } = useFocusable({ focusKey: 'PLAYER_ROOT' });
+  // Player controls use the same TV spatial-navigation system as the rest of the app.
+  const { ref, focusKey, setFocus } = useFocusable({
+    focusKey: 'PLAYER_ROOT',
+    isFocusBoundary: true,
+    trackChildren: true,
+    saveLastFocusedChild: true,
+    autoRestoreFocus: false,
+  });
   useEffect(() => {
-    pause();
-    return () => resume();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const timer = setTimeout(() => setFocus('OSD_PLAY_PAUSE'), 80);
+    return () => clearTimeout(timer);
+  }, [currentSource?.id, setFocus]);
+
+  const [autoNextSeconds, setAutoNextSeconds] = useState<number | null>(null);
+  const cancelAutoNext = () => setAutoNextSeconds(null);
+  const { ref: cancelAutoNextRef, focused: cancelAutoNextFocused } = useFocusable({
+    focusKey: 'AUTO_NEXT_CANCEL',
+    onEnterPress: cancelAutoNext,
+  });
 
   // ─── Persistent error state ─────────────────────────────────────────────────
   // Set by onFatalError (all url × strategy combinations exhausted) OR by a
@@ -91,7 +108,8 @@ export function VideoPlayer() {
   }, [subtitleEnabled]);
 
   usePlayer(videoRef, onFatalError);
-  useRemote(videoRef);
+  const playerController = usePlayerController(videoRef, currentSource?.id);
+  useRemote(playerController);
   useAudioWatchdog(videoRef);
   useStreamWatchdog({
     videoRef,
@@ -110,19 +128,41 @@ export function VideoPlayer() {
     }
   }, [error, persistentError]);
 
-  // Error overlay görünürken spatial nav'ı resume et (Geri butonuna focus gelebilsin)
-  // NOT: cleanup içinde pause() YOK.
-  // Neden: React, unmount sırasında effect cleanup'larını tanım sırasına göre çalıştırır:
-  //   Effect 1 cleanup → resume()   (correct: leaving player)
-  //   Effect 2 cleanup → pause()    (BUG: nav paused after unmount!)
-  // handleBack() zaten navigate() çağırdığından bileşen unmount olur;
-  // Effect 1'in resume() cleanup'ı yeterli.
+  // Episode completion starts a cancellable 10-second next-episode countdown.
   useEffect(() => {
-    if (persistentError) {
-      resume();
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleEnded = () => {
+      const isCurrentEpisode = Boolean(
+        playingEpisode && currentSource?.id === `series-ep-${playingEpisode.episodeId}`
+      );
+      if (isCurrentEpisode && canPlayAdjacentEpisode('next')) {
+        setAutoNextSeconds(10);
+        setTimeout(() => setFocus('AUTO_NEXT_CANCEL'), 0);
+      }
+    };
+
+    video.addEventListener('ended', handleEnded);
+    return () => video.removeEventListener('ended', handleEnded);
+  }, [playingEpisode, currentSource?.id, canPlayAdjacentEpisode, setFocus]);
+
+  useEffect(() => {
+    if (autoNextSeconds === null) return;
+    if (autoNextSeconds <= 0) {
+      setAutoNextSeconds(null);
+      playAdjacentEpisode('next');
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persistentError]);
+    const timer = setTimeout(() => {
+      setAutoNextSeconds(value => value === null ? null : value - 1);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [autoNextSeconds, playAdjacentEpisode]);
+
+  useEffect(() => {
+    setAutoNextSeconds(null);
+  }, [currentSource?.id]);
 
   const handleBack = () => {
     setPersistentError(null);
@@ -140,7 +180,8 @@ export function VideoPlayer() {
   };
 
   return (
-    <div className="relative w-full h-full bg-bg-base overflow-hidden">
+    <FocusContext.Provider value={focusKey}>
+    <div ref={ref as React.RefObject<HTMLDivElement>} className="relative w-full h-full bg-bg-base overflow-hidden">
       {/* Dynamic subtitle font size — targets native ::cue rendering */}
       <style>{`video::cue { font-size: ${SUBTITLE_SIZE_PX[subtitleSize]}; }`}</style>
 
@@ -186,7 +227,33 @@ export function VideoPlayer() {
         />
       )}
 
-      <OSD videoRef={videoRef} />
+      {autoNextSeconds !== null && (
+        <div className="absolute inset-0 z-30 grid place-items-center bg-black/55">
+          <div className="w-[520px] rounded-2xl border border-[#E8B567]/35 bg-[#131110]/95 px-8 py-7 text-center shadow-[0_30px_80px_-25px_#000]">
+            <div className="font-serif text-[26px] text-white">
+              {t('player.next_episode_countdown', {
+                count: autoNextSeconds,
+                defaultValue: `Sonraki bölüm ${autoNextSeconds} saniye içinde başlayacak`,
+              })}
+            </div>
+            <button
+              ref={cancelAutoNextRef as React.RefObject<HTMLButtonElement>}
+              onClick={cancelAutoNext}
+              className={[
+                'mt-5 px-6 h-11 rounded-full border text-[12px] uppercase tracking-[0.25em] font-semibold transition-all',
+                cancelAutoNextFocused
+                  ? 'border-[#E8B567]/65 bg-[#E8B567]/10 text-[#E8B567] shadow-[0_0_22px_-7px_#E8B567]'
+                  : 'border-white/20 text-white/60',
+              ].join(' ')}
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <OSD controller={playerController} />
     </div>
+    </FocusContext.Provider>
   );
 }

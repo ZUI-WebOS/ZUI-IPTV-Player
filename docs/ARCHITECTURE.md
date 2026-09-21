@@ -2,7 +2,7 @@
 
 ## Overview
 
-ZUI IPTV Player, LG webOS TV'ler için (hedef: LG NANO81 serisi, webOS 6.x) geliştirilen özel bir IPTV oynatıcısıdır. Birden fazla playlist kaynağını (M3U URL ve Xtream Codes API), entegre EPG'yi (XMLTV) destekler ve TV kumandası navigasyonu için optimize edilmiştir.
+ZUI IPTV Player, LG webOS TV'ler için geliştirilen özel bir IPTV oynatıcısıdır. Birden fazla playlist kaynağını (M3U URL ve Xtream Codes API), entegre EPG'yi (XMLTV) destekler ve TV kumandası navigasyonu için optimize edilmiştir.
 
 Uygulama, Vite ile build edilmiş tek sayfalık (SPA) bir React uygulamasıdır ve Developer Mode üzerinden sideload edilecek bir webOS `.ipk` paketi olarak dağıtılır.
 
@@ -12,12 +12,12 @@ Uygulama, Vite ile build edilmiş tek sayfalık (SPA) bir React uygulamasıdır 
 
 | Özellik | Değer | Pratik Sonuç |
 |---|---|---|
-| Donanım | LG NANO81T6A (2021) | ARM, ~4 core, 1-1.5 GHz |
-| webOS | 6.x | Chromium ~79+ tabanlı |
-| Çözünürlük | 4K panel, 1080p logical | App 1920×1080'de render eder |
-| Bellek | ~1-1.5 GB app'e ayrılan | Uzun listeleri virtualize et |
-| Native HLS | Kısmi destek | hls.js fallback şart |
-| DRM (Widevine) | Dev Mode'da yok | DRM stream'leri kapsam dışı |
+| Doğrulanmış cihaz | LG 55NANO81T6A | Gerçek TV kabul testlerinin referansı |
+| Ölçülen sürüm | SDK 10.3.1, firmware 33.31.61 | Daha eski platformlar ayrıca doğrulanmalı |
+| Çözünürlük | 1920×1080 uygulama yüzeyi | `appinfo.json` ile sabit |
+| Uzun listeler | Sanallaştırılmış liste/grid | TV belleği ve odak sürekliliği korunur |
+| Medya | Native `<video>` → hls.js/mpegts.js fallback | Kaynağa ve codec'e göre davranış değişebilir |
+| DRM | Uygulamada DRM entegrasyonu yok | DRM stream'leri kapsam dışı |
 | Pointer | Magic Remote opsiyonel | D-pad + pointer ikisini de destekle |
 
 ---
@@ -36,7 +36,7 @@ Uygulama, Vite ile build edilmiş tek sayfalık (SPA) bir React uygulamasıdır 
 | M3U Parser | iptv-playlist-parser | ^0.13 | Web Worker içinde kullanılır |
 | State | Zustand | ^4.5 | Hafif, ergonomik (tam liste değil, slice tutar) |
 | EPG Storage | idb | ^8.0 | IndexedDB wrapper, XMLTV + Channel cache için |
-| webOS CLI | @webosose/ares-cli | ^3.0 | Resmi build/deploy aracı |
+| webOS CLI | @webos-tools/cli | 3.2.3 paketleme; 3.2.5 temiz VM | LG TV paketleme/deploy aracı |
 
 > **shadcn/ui kasıtlı olarak yok.** Gerekçe: Radix UI primitif'leri klavye-Tab focus management kullanır, norigin spatial nav ile çatışır. Tüm interactive primitif'ler (Modal, Tabs, Select, Dropdown) Tailwind + CVA üzerinde sıfırdan, norigin `useFocusable` hook'uyla sarmalanmış olarak yazılır. Bkz. `DECISIONS.md` D-011.
 
@@ -44,8 +44,11 @@ Uygulama, Vite ile build edilmiş tek sayfalık (SPA) bir React uygulamasıdır 
 
 ## Folder Structure
 
+> Aşağıdaki şema mimari bölgeleri özetleyen tarihsel bir görünüm sunar; güncel
+> ve eksiksiz dosya envanteri değildir. Dosya adları için kaynak ağacı esastır.
+
 ```
-sim-player/
+ZUI_IPTV_Player/
 ├── appinfo.json              # webOS manifest
 ├── icon.png                  # 80×80 launcher icon
 ├── largeIcon.png             # 130×130 launcher icon
@@ -147,11 +150,22 @@ sim-player/
 └─────────────────────────────────────────────────────┘
 ```
 
-Veri akışı: Source (M3U URL veya Xtream API) → **m3uParser.worker.ts** (Web Worker, fetch + parse) → **channelCache** (IndexedDB `channels` store) → ChannelGrid IDB'den paginated query çeker → user select → playerStore → **PlayerStrategy resolver** stream URL'ine göre HLS/MpegTS/Native stratejilerinden birini seçer → VideoPlayer.
+Veri akışı: Source (M3U URL veya Xtream API) → M3U için Web Worker / Xtream
+servisi → **channelCache** → IndexedDB `channels` ve `sources` store'ları →
+playlist/movie/series store'ları → playerStore → **PlayerStrategy resolver** →
+VideoPlayer. Native `<video>` ilk adaydır; kaynağa göre HLS ve MPEG-TS
+stratejileri fallback olarak denenir.
 
-EPG paralel olarak benzer pipeline'ı izler: epg.service URL'i Worker'a verir, Worker XMLTV'yi parse edip IndexedDB'ye yazar, ChannelCard ve EPGGrid IDB'den okur.
+IndexedDB adı `zui-iptv-player`, güncel şema sürümü `7`'dir. Store'lar:
+`channels`, `sources`, migration için `sources-meta`, `epg-channels`,
+`epg-programs`, `epg-meta`, `favorites`, `uiState` ve `logoCache`.
+Zustand persist kullanan küçük UI/ayar durumları localStorage'da tutulur.
+Kaynak kayıtları IPTV URL veya Xtream kimlik bilgileri içerebildiği için TV
+veri yedeği ve hata raporları gizli veri olarak ele alınmalıdır.
 
-**Önemli prensip**: Main thread asla büyük string parse etmez. Zustand store'da asla tüm liste tutulmaz — sadece filtre durumu ve görünür slice.
+EPG paralel olarak benzer pipeline'ı izler: epg.service URL'i Worker'a verir,
+Worker XMLTV'yi parse edip IndexedDB'ye yazar; EPG bileşenleri zaman aralığı
+indekslerini kullanarak okur.
 
 ---
 
@@ -426,13 +440,14 @@ Production'da daha restrictive yapılmalı (sadece kullanıcının girdiği sour
 
 ### Dev Mode Constraints
 
-- Session timer: 1000 saat (Dev Mode app içinden uzatılır)
+- Session timer sınırlıdır; TV'deki güncel **Remain Session** değeri izlenir ve
+  süre dolmadan Developer Mode içinden **EXTEND** kullanılır
 - 10 reboot offline = oturum kaybı + IPK'lar silinir
 - Permanent install: webosbrew + Homebrew Channel (Faz 5'te opsiyonel)
 
 ---
 
-## Performance Budget
+## Performance Targets (henüz tam kabul ölçümü değil)
 
 - **Initial bundle**: < 500 KB gzipped (split chunk'lar dahil)
 - **Time to first paint**: < 2 saniye TV'de
@@ -467,15 +482,13 @@ Production'da daha restrictive yapılmalı (sadece kullanıcının girdiği sour
 ```bash
 # Geliştirme (Node 24 — build toolchain)
 nvm use 24
-npm run dev               # Vite dev server, localhost:3000
+npm run dev               # Vite varsayılanı localhost:5173; terminal çıktısı esastır
 
 # Üretim build (Node 24)
 npm run build             # tsc + vite build → dist/
-npm run package           # ares-package ile dist/ → dist-ipk/com.zui.player_0.1.0_all.ipk
-
-# TV'ye yükleme (Node 16.20.2 — webOS CLI)
 nvm use 16.20.2
-ares-install -d tv dist-ipk/com.zui.player_0.1.0_all.ipk
+ares-package dist -o dist-ipk
+ares-install -d tv dist-ipk/com.zui.player_1.0.1_all.ipk
 ares-launch -d tv com.zui.player
 
 # Tek komutla (PowerShell wrapper)
@@ -489,12 +502,12 @@ ares-launch -d tv com.zui.player
 ```bash
 nvm install 16.20.2
 nvm install 24
-npm install -g @webos-tools/cli            # GLOBAL — proje devDep'inde değil
+npm install -g @webos-tools/cli@3.2.5      # Node 16 uyumlu; GLOBAL
 
 # TV bağlantısı
-ares-setup-device                          # Interactive: device "tv", IP, port 9922, user prisoner, password=passphrase
-ares-novacom --device tv --getkey          # SSH özel anahtarını indirir (~/.ssh/tv_webos)
-ares-device-info --device tv               # Bağlantı testi
+ares-setup-device                          # Interactive: device "tv", IP, port 9922, user prisoner; parola boş
+ares-novacom --device tv --getkey          # Key Server açıkken passphrase ile SSH anahtarını alır
+ares-device --system-info --device tv      # Bağlantı testi
 ```
 
 Bkz. D-016 (CLI paket kararı) ve D-018 (novacom akışı düzeltmesi).
@@ -503,8 +516,10 @@ Bkz. D-016 (CLI paket kararı) ve D-018 (novacom akışı düzeltmesi).
 
 ## Test Strategy
 
-- **Faz 0-4**: Manuel test, TV'de gerçek deneme
-- **Faz 5**: Vitest unit testleri (servisler için: m3u parse, EPG parse, store action'ları). E2E (Playwright?) muhtemelen kapsam dışı — webOS environment simulate edilmesi zor.
+- Bu checkout'ta otomatik test script'i bulunmuyor.
+- TypeScript kontrolü `npm run build` içindeki `tsc --noEmit` ile çalışır.
+- Kumanda, native medya ve lifecycle davranışları gerçek TV kabul dizileriyle
+  doğrulanır; tarayıcı veya simülatör sonucu gerçek TV kabulü sayılmaz.
 
 ---
 

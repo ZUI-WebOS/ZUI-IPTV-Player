@@ -291,8 +291,13 @@ function SectionHeader() {
 export function SeriesGrid({ focusedSeriesId, onFocusSeries }: Props) {
   const { t } = useTranslation();
   const seriesList = useSeriesStore(s => s.visibleSeries);
+  const activeCategory = useSeriesStore(s => s.activeCategory);
   const toggleWatchlist = useSeriesStore(s => s.toggleWatchlist);
   const playSeries = useSeriesStore(s => s.playSeries);
+  const sidebarFocusKey = activeCategory
+    ? `series-cat-${activeCategory}`
+    : 'SERIES_CATEGORY_SEARCH';
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
 
   const gridRef = useRef<GridImperativeAPI>(null);
   const [containerSize, setContainerSize] = useState({ width: 1200, height: 600 });
@@ -327,11 +332,16 @@ export function SeriesGrid({ focusedSeriesId, onFocusSeries }: Props) {
     switch (direction) {
       case 'up':    return moveTo(focusedRowRef.current - 1, focusedColRef.current);
       case 'down':  return moveTo(focusedRowRef.current + 1, focusedColRef.current);
-      case 'left':  return moveTo(focusedRowRef.current, focusedColRef.current - 1);
+      case 'left':
+        if (focusedColRef.current === 0) {
+          setFocusRef.current?.(sidebarFocusKey);
+          return false;
+        }
+        return moveTo(focusedRowRef.current, focusedColRef.current - 1);
       case 'right': return moveTo(focusedRowRef.current, focusedColRef.current + 1);
       default:      return true;
     }
-  }, [isVirtualized, seriesList, onFocusSeries]);
+  }, [isVirtualized, seriesList, onFocusSeries, sidebarFocusKey]);
 
   // Long-press = toggle watchlist; short-press = play series
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -361,12 +371,13 @@ export function SeriesGrid({ focusedSeriesId, onFocusSeries }: Props) {
     }
   }, [isVirtualized, seriesList, playSeries]);
 
-  const { ref: focusRef, focusKey, focused } = useFocusable({
+  const { ref: focusRef, focusKey, focused, setFocus } = useFocusable({
     focusKey: 'SERIES_GRID_VIRTUAL',
     onArrowPress: handleArrowPress,
     onEnterPress: handleEnterPress,
     onEnterRelease: handleEnterRelease,
   });
+  setFocusRef.current = setFocus;
 
   // Sync external focused id
   useEffect(() => {
@@ -431,10 +442,12 @@ export function SeriesGrid({ focusedSeriesId, onFocusSeries }: Props) {
           ref={focusRef as React.RefObject<HTMLDivElement>}
           className="grid grid-cols-5 gap-5 flex-1 min-h-0 overflow-y-auto pr-1 pb-2"
         >
-          {seriesList.map(s => (
+          {seriesList.map((s, index) => (
             <SeriesCard
               key={s.id}
               series={s}
+              isFirstColumn={index % GRID_COLS === 0}
+              sidebarFocusKey={sidebarFocusKey}
               onSelect={() => playSeries(s.id)}
               onFocus={() => onFocusSeries(s.id)}
               onToggleWatchlist={() => toggleWatchlist(s.id)}

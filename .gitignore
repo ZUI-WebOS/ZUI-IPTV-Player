@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-ipk/
+prototip/
 *.ipk
 .env
 .env.local
@@ -11,6 +12,18 @@ Thumbs.db
 .idea/
 *.log
 npm-debug.log*
+
+# Local TV test output and Windows workspace shortcuts
+/screenshots/
+/My_OS.lnk
+/com.zui.player.manifest.json
+
+# One-off local VM setup artefacts; public replacements live under
+# scripts/windows-setup/.
+/scripts/ZUI_VM_*.cmd
+/scripts/vm-stage*.ps1
+/scripts/check-clean-install-environment.ps1
+/scripts/*-report.txt
 
 # Internal dev artefacts (not for public repo)
 PROMPT_FAZ*.md

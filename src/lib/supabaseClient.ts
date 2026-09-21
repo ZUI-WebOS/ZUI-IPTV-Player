@@ -9,6 +9,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseConfig } from '@/state/cloudSyncConfigStore';
+import { RELEASE_FEATURES } from '@/config/releaseFeatures';
 
 export type SupabaseClientOpts = {
   /** Short TV identifier, e.g. "A1B2-C3D4". Sent as x-zui-device-id header. */
@@ -22,6 +23,9 @@ export type SupabaseClientOpts = {
  * Returns null when Cloud Sync is not configured (no URL + anon key available).
  */
 export function getSupabaseClient(opts?: SupabaseClientOpts) {
+  // Network-layer release gate. Persisted legacy settings or a local .env file
+  // cannot create a Supabase client while Cloud Sync is disabled.
+  if (!RELEASE_FEATURES.cloudSync) return null;
   const cfg = getSupabaseConfig();
   if (!cfg) return null;
 
@@ -40,5 +44,5 @@ export function getSupabaseClient(opts?: SupabaseClientOpts) {
  * (either from env vars or from the runtime Settings override).
  */
 export function isCloudSyncConfigured(): boolean {
-  return getSupabaseConfig() !== null;
+  return RELEASE_FEATURES.cloudSync && getSupabaseConfig() !== null;
 }

@@ -244,8 +244,13 @@ function SectionHeader() {
 export function MoviesGrid({ focusedMovieId, onFocusMovie }: Props) {
   const { t } = useTranslation();
   const movies = useMoviesStore(s => s.visibleMovies);
+  const activeCategory = useMoviesStore(s => s.activeCategory);
   const toggleFavorite = useMoviesStore(s => s.toggleFavorite);
   const playMovie = useMoviesStore(s => s.playMovie);
+  const sidebarFocusKey = activeCategory
+    ? `movie-cat-${activeCategory}`
+    : 'MOVIES_CATEGORY_SEARCH';
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
 
   const gridRef = useRef<GridImperativeAPI>(null);
   const [containerSize, setContainerSize] = useState({ width: 1200, height: 600 });
@@ -280,11 +285,16 @@ export function MoviesGrid({ focusedMovieId, onFocusMovie }: Props) {
     switch (direction) {
       case 'up':    return moveTo(focusedRowRef.current - 1, focusedColRef.current);
       case 'down':  return moveTo(focusedRowRef.current + 1, focusedColRef.current);
-      case 'left':  return moveTo(focusedRowRef.current, focusedColRef.current - 1);
+      case 'left':
+        if (focusedColRef.current === 0) {
+          setFocusRef.current?.(sidebarFocusKey);
+          return false;
+        }
+        return moveTo(focusedRowRef.current, focusedColRef.current - 1);
       case 'right': return moveTo(focusedRowRef.current, focusedColRef.current + 1);
       default:      return true;
     }
-  }, [isVirtualized, movies, onFocusMovie]);
+  }, [isVirtualized, movies, onFocusMovie, sidebarFocusKey]);
 
   // Long-press fav / short-press play
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -314,12 +324,13 @@ export function MoviesGrid({ focusedMovieId, onFocusMovie }: Props) {
     }
   }, [isVirtualized, movies, playMovie]);
 
-  const { ref: focusRef, focusKey, focused } = useFocusable({
+  const { ref: focusRef, focusKey, focused, setFocus } = useFocusable({
     focusKey: 'MOVIES_GRID_VIRTUAL',
     onArrowPress: handleArrowPress,
     onEnterPress: handleEnterPress,
     onEnterRelease: handleEnterRelease,
   });
+  setFocusRef.current = setFocus;
 
   // Sync external focused id (e.g. category change → first cell)
   useEffect(() => {
@@ -386,10 +397,12 @@ export function MoviesGrid({ focusedMovieId, onFocusMovie }: Props) {
           ref={focusRef as React.RefObject<HTMLDivElement>}
           className="grid grid-cols-5 gap-5 flex-1 min-h-0 overflow-y-auto pr-1 pb-2"
         >
-          {movies.map(m => (
+          {movies.map((m, index) => (
             <MovieCard
               key={m.id}
               movie={m}
+              isFirstColumn={index % GRID_COLS === 0}
+              sidebarFocusKey={sidebarFocusKey}
               onSelect={() => playMovie(m.id)}
               onFocus={() => onFocusMovie(m.id)}
               onToggleFavorite={() => toggleFavorite(m.id)}

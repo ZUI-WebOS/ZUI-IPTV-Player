@@ -10,24 +10,42 @@ import type { Movie } from '@/types/movie';
 
 interface Props {
   movie: Movie;
+  isFirstColumn: boolean;
+  sidebarFocusKey: string;
   onSelect: () => void;
   onFocus: () => void;
   onToggleFavorite: () => void;
 }
 
-export function MovieCard({ movie, onSelect, onFocus, onToggleFavorite }: Props) {
+export function MovieCard({
+  movie,
+  isFirstColumn,
+  sidebarFocusKey,
+  onSelect,
+  onFocus,
+  onToggleFavorite,
+}: Props) {
   const isFavorite = useMoviesStore(s => s.favoriteIds.includes(movie.id));
   const progress = useMoviesStore(s => s.watchProgress[movie.id] ?? 0);
   const { showImg, onError, onLoad } = useMoviePoster(movie.posterUrl);
 
   const wasLongPressedRef = useRef(false);
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
 
-  const { ref, focused } = useFocusableScroll({
+  const { ref, focused, setFocus } = useFocusableScroll({
     focusKey: `movie-${movie.id}`,
     onFocus,
+    onArrowPress: (direction) => {
+      if (direction === 'left' && isFirstColumn) {
+        setFocusRef.current?.(sidebarFocusKey);
+        return false;
+      }
+      return true;
+    },
     block: 'nearest',
     inline: 'nearest',
   });
+  setFocusRef.current = setFocus;
 
   useLongPress({
     onLongPress: onToggleFavorite,

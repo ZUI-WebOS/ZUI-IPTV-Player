@@ -20,7 +20,7 @@ import type { Source } from '@/types/source';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? '1.0.0';
+const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? '1.0.1';
 
 function getGreetingKey(date: Date): string {
   const h = date.getHours();
@@ -684,6 +684,7 @@ function FeaturedSection({
         sourceType: ch.sourceType,
         streamUrlCandidates: ch.streamUrlCandidates,
       });
+      useUIStore.setState({ lastMainScreen: 'channelList' });
       navigate('player');
     },
     [navigate],
@@ -790,6 +791,7 @@ export function HomeScreen() {
       sourceType: lastChannel.sourceType,
       streamUrlCandidates: lastChannel.streamUrlCandidates,
     });
+    useUIStore.setState({ lastMainScreen: 'channelList' });
     navigate('player');
   }, [lastChannel, navigate]);
 

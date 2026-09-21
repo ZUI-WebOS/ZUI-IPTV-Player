@@ -7,8 +7,8 @@
 // TV Kimliği  = djb2(serial, 0xdeadbeef) → "XXXX-XXXX"
 // Cihaz Anahtarı = djb2(serial, 0xbeefdead) → 6 base36 karakter
 //
-// Farklı seed kullanıldığı için TV Kimliği'ni bilen biri
-// Cihaz Anahtarı'nı tahmin edemez (djb2 tek yönlüdür).
+// UYARI: djb2 kriptografik bir KDF değildir. Farklı seed kullanılması bu kısa,
+// deterministik değeri yüksek entropili bir kimlik doğrulama sırrına dönüştürmez.
 
 // ─── djb2 hash (32-bit pozitif tam sayı) ─────────────────────────────────────
 

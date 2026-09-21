@@ -1,5 +1,10 @@
 # ZUI IPTV Player — Phases
 
+> **Historical planning document:** This file records the original development
+> plan and is not the current release checklist. Several phases and filenames
+> below have since changed. Use `README.md`, `README_Tr.md`, `docs/SIDELOAD.md`,
+> the current source tree, and the latest accepted decisions for release work.
+
 Toplam 6 faz (0'dan 5'e). Her faz bir kapanış kriteriyle biter; bir sonraki faza geçmeden önce TV'de gerçek doğrulama yapılır. Yarım kalan iş bir sonraki faza taşınmaz, geri dönülür.
 
 ---

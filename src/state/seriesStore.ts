@@ -96,11 +96,22 @@ function buildCategories(
 
 export type SeriesStatus = 'idle' | 'loading' | 'error' | 'ready';
 
+export type EpisodePlaybackContext = {
+  seriesId: string;
+  seriesTitle: string;
+  seasonKey: string;
+  episodeId: string;
+  episodeNum: number;
+};
+
+type EpisodeDirection = 'previous' | 'next';
+
 type SeriesStore = {
   allSeries: Series[];
   visibleSeries: Series[];
   categories: SeriesCategory[];
   activeCategory: string;
+  lastFocusedSeriesId: string | null;
   watchlistIds: string[];
   currentEpisode: Record<string, CurrentEpisode>;
   watchProgress: Record<string, number>;
@@ -116,12 +127,14 @@ type SeriesStore = {
   detailsStatus: 'idle' | 'loading' | 'error' | 'ready';
   detailsError: string | null;
   detailsActiveSeason: number;
+  playingEpisode: EpisodePlaybackContext | null;
 
   hiddenCategoryIds: string[];
 
   // Actions
   loadSeriesData: () => Promise<void>;
   setActiveCategory: (id: string) => void;
+  setLastFocusedSeries: (id: string | null) => void;
   setCategorySearch: (q: string) => void;
   setActiveSeason: (seriesId: string, season: number) => void;
   cycleSort: () => void;
@@ -132,6 +145,8 @@ type SeriesStore = {
   closeSeriesDetails: () => void;
   setDetailsActiveSeason: (season: number) => void;
   playEpisode: (episode: XtreamSeriesEpisode, seriesTitle: string, seasonKey: string) => void;
+  canPlayAdjacentEpisode: (direction: EpisodeDirection) => boolean;
+  playAdjacentEpisode: (direction: EpisodeDirection) => boolean;
 
   toggleHiddenCategory: (id: string) => void;
 
@@ -149,6 +164,7 @@ export const useSeriesStore = create<SeriesStore>()(
       visibleSeries: [],
       categories: [],
       activeCategory: '',
+      lastFocusedSeriesId: null,
       watchlistIds: [],
       currentEpisode: {},
       watchProgress: {},
@@ -163,6 +179,7 @@ export const useSeriesStore = create<SeriesStore>()(
       detailsStatus: 'idle',
       detailsError: null,
       detailsActiveSeason: 1,
+      playingEpisode: null,
 
       // ── Load series data ────────────────────────────────────────────────
 
@@ -216,6 +233,8 @@ export const useSeriesStore = create<SeriesStore>()(
         set({ activeCategory: id });
         get()._recompute();
       },
+
+      setLastFocusedSeries: (id) => set({ lastFocusedSeriesId: id }),
 
       setCategorySearch: (q) => {
         set({ categorySearch: q });
@@ -275,6 +294,8 @@ export const useSeriesStore = create<SeriesStore>()(
         const creds = getXtreamCreds();
         if (!creds) return;
 
+        set({ lastFocusedSeriesId: id });
+
         // Fire-and-forget: fetch episode list then navigate to player
         void (async () => {
           try {
@@ -291,18 +312,14 @@ export const useSeriesStore = create<SeriesStore>()(
               return;
             }
 
-            const url = buildSeriesEpisodeUrl(creds, firstEp.id, firstEp.container_extension);
-            const seasonNum = String(Number(firstSeasonKey)).padStart(2, '0');
-            const epNum = String(firstEp.episode_num).padStart(2, '0');
-            const epName = `${series.title} · S${seasonNum}·E${epNum}`;
-
-            usePlayerStore.getState().setSource({
-              id: `series-${id}-s${firstSeasonKey}e${firstEp.episode_num}`,
-              name: epName,
-              url,
-              sourceType: 'xtream',
+            set({
+              detailsSeriesId: id,
+              detailsInfo: info,
+              detailsStatus: 'ready',
+              detailsError: null,
+              detailsActiveSeason: Number(firstSeasonKey),
             });
-            useUIStore.getState().navigate('player');
+            get().playEpisode(firstEp, series.title, firstSeasonKey);
           } catch {
             useToast.getState().show('Bölüm yüklenemedi');
           }
@@ -332,7 +349,13 @@ export const useSeriesStore = create<SeriesStore>()(
       },
 
       closeSeriesDetails: () => {
-        set({ detailsSeriesId: null, detailsInfo: null, detailsStatus: 'idle', detailsError: null });
+        set({
+          detailsSeriesId: null,
+          detailsInfo: null,
+          detailsStatus: 'idle',
+          detailsError: null,
+          playingEpisode: null,
+        });
       },
 
       setDetailsActiveSeason: (season) => {
@@ -342,6 +365,9 @@ export const useSeriesStore = create<SeriesStore>()(
       playEpisode: (episode, seriesTitle, seasonKey) => {
         const creds = getXtreamCreds();
         if (!creds) return;
+
+        const seriesId = get().detailsSeriesId;
+        if (!seriesId) return;
 
         const url = buildSeriesEpisodeUrl(creds, episode.id, episode.container_extension);
         const seasonNum = String(Number(seasonKey)).padStart(2, '0');
@@ -354,8 +380,51 @@ export const useSeriesStore = create<SeriesStore>()(
           url,
           sourceType: 'xtream',
         });
-        get().closeSeriesDetails();
+        set({
+          detailsActiveSeason: Number(seasonKey),
+          playingEpisode: {
+            seriesId,
+            seriesTitle,
+            seasonKey,
+            episodeId: episode.id,
+            episodeNum: episode.episode_num,
+          },
+        });
         useUIStore.getState().navigate('player');
+      },
+
+      canPlayAdjacentEpisode: (direction) => {
+        const { detailsInfo, playingEpisode } = get();
+        if (!detailsInfo || !playingEpisode) return false;
+
+        const episodes = Object.keys(detailsInfo.episodes)
+          .sort((a, b) => Number(a) - Number(b))
+          .flatMap(seasonKey =>
+            (detailsInfo.episodes[seasonKey] ?? []).map(episode => ({ seasonKey, episode }))
+          );
+        const index = episodes.findIndex(item => item.episode.id === playingEpisode.episodeId);
+        if (index < 0) return false;
+        const targetIndex = direction === 'next' ? index + 1 : index - 1;
+        return targetIndex >= 0 && targetIndex < episodes.length;
+      },
+
+      playAdjacentEpisode: (direction) => {
+        const { detailsInfo, playingEpisode } = get();
+        if (!detailsInfo || !playingEpisode) return false;
+
+        const episodes = Object.keys(detailsInfo.episodes)
+          .sort((a, b) => Number(a) - Number(b))
+          .flatMap(seasonKey =>
+            (detailsInfo.episodes[seasonKey] ?? []).map(episode => ({ seasonKey, episode }))
+          );
+        const index = episodes.findIndex(item => item.episode.id === playingEpisode.episodeId);
+        if (index < 0) return false;
+        const targetIndex = direction === 'next' ? index + 1 : index - 1;
+        const target = episodes[targetIndex];
+        if (!target) return false;
+
+        get().playEpisode(target.episode, playingEpisode.seriesTitle, target.seasonKey);
+        return true;
       },
 
       // ── Internal ────────────────────────────────────────────────────────

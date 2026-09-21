@@ -1,7 +1,7 @@
 // SeriesScreen — root layout for the Series screen.
 // Mirrors MoviesScreen: always renders FocusContext, lazy-loads data on mount.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusable, FocusContext } from '@noriginmedia/norigin-spatial-navigation';
 import { useTranslation } from 'react-i18next';
 import { useSeriesStore } from '@/state/seriesStore';
@@ -17,9 +17,18 @@ export function SeriesScreen() {
   const error = useSeriesStore(s => s.error);
   const loadSeriesData = useSeriesStore(s => s.loadSeriesData);
   const detailsSeriesId = useSeriesStore(s => s.detailsSeriesId);
+  const closeSeriesDetails = useSeriesStore(s => s.closeSeriesDetails);
+  const lastFocusedSeriesId = useSeriesStore(s => s.lastFocusedSeriesId);
+  const setLastFocusedSeries = useSeriesStore(s => s.setLastFocusedSeries);
 
   const { t } = useTranslation();
-  const [focusedSeriesId, setFocusedSeriesId] = useState<string | null>(null);
+  const [focusedSeriesId, setFocusedSeriesId] = useState<string | null>(lastFocusedSeriesId);
+  const initialFocusDone = useRef(false);
+
+  const handleFocusSeries = useCallback((id: string | null) => {
+    setFocusedSeriesId(id);
+    setLastFocusedSeries(id);
+  }, [setLastFocusedSeries]);
 
   // Page-level focus context — declared BEFORE any conditional returns
   const { ref, focusKey, setFocus } = useFocusable({
@@ -27,6 +36,13 @@ export function SeriesScreen() {
     trackChildren: true,
     saveLastFocusedChild: true,
   });
+
+  const handleCloseSeriesDetails = useCallback(() => {
+    closeSeriesDetails();
+    // The focused modal node unmounts here. Restore focus explicitly to the
+    // button that opened it so the TV remote remains inside the Series page.
+    setTimeout(() => setFocus('SERIES_HERO_INFO'), 0);
+  }, [closeSeriesDetails, setFocus]);
 
   // Load series data on mount if not already loaded.
   // Also retry if status is 'error' — covers the case where an Xtream source
@@ -46,17 +62,38 @@ export function SeriesScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Set D-pad focus when data becomes ready
+  // Restore the previously focused card after returning from the player.
   useEffect(() => {
-    if (status === 'ready') {
-      const t = setTimeout(() => setFocus('SERIES_BACK_HOME'), 60);
+    if (status === 'ready' && !initialFocusDone.current) {
+      const restoreSeriesId = lastFocusedSeriesId && visibleSeries.some(s => s.id === lastFocusedSeriesId)
+        ? lastFocusedSeriesId
+        : null;
+      const t = setTimeout(() => {
+        if (initialFocusDone.current) return;
+        initialFocusDone.current = true;
+        if (restoreSeriesId) {
+          setFocusedSeriesId(restoreSeriesId);
+          setFocus(
+            visibleSeries.length >= 50
+              ? 'SERIES_GRID_VIRTUAL'
+              : `series-${restoreSeriesId}`
+          );
+        } else {
+          setFocus('SERIES_BACK_HOME');
+        }
+      }, 60);
       return () => clearTimeout(t);
     }
-  }, [status, setFocus]);
+  }, [status, setFocus, lastFocusedSeriesId, visibleSeries]);
 
   // Category change → reset focused series to first visible
   useEffect(() => {
-    setFocusedSeriesId(visibleSeries[0]?.id ?? null);
+    const savedId = useSeriesStore.getState().lastFocusedSeriesId;
+    setFocusedSeriesId(
+      savedId && visibleSeries.some(s => s.id === savedId)
+        ? savedId
+        : (visibleSeries[0]?.id ?? null)
+    );
   }, [activeCategory, visibleSeries]);
 
   const focusedSeries =
@@ -64,7 +101,7 @@ export function SeriesScreen() {
 
   return (
     <>
-    {detailsSeriesId && <EpisodeBrowserModal />}
+    {detailsSeriesId && <EpisodeBrowserModal onClose={handleCloseSeriesDetails} />}
     <FocusContext.Provider value={focusKey}>
       <div
         ref={ref as React.RefObject<HTMLDivElement>}
@@ -111,7 +148,7 @@ export function SeriesScreen() {
               <SeriesHero series={focusedSeries} />
               <SeriesGrid
                 focusedSeriesId={focusedSeriesId}
-                onFocusSeries={setFocusedSeriesId}
+                onFocusSeries={handleFocusSeries}
               />
             </main>
           </div>

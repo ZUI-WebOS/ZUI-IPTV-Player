@@ -97,6 +97,7 @@ type MoviesStore = {
   visibleMovies: Movie[];
   categories: MovieCategory[];
   activeCategory: string;
+  lastFocusedMovieId: string | null;
   favoriteIds: string[];
   watchProgress: Record<string, number>;   // 0–1
   sortBy: MovieSort;
@@ -110,6 +111,7 @@ type MoviesStore = {
   // Actions
   loadVodData: () => Promise<void>;
   setActiveCategory: (id: string) => void;
+  setLastFocusedMovie: (id: string | null) => void;
   setCategorySearch: (q: string) => void;
   cycleSort: () => void;
   toggleFavorite: (id: string) => void;
@@ -132,6 +134,7 @@ export const useMoviesStore = create<MoviesStore>()(
       visibleMovies: [],
       categories: [],
       activeCategory: '',
+      lastFocusedMovieId: null,
       favoriteIds: [],
       watchProgress: {},
       hiddenCategoryIds: [],
@@ -195,6 +198,8 @@ export const useMoviesStore = create<MoviesStore>()(
         get()._recompute();
       },
 
+      setLastFocusedMovie: (id) => set({ lastFocusedMovieId: id }),
+
       setCategorySearch: (q) => {
         set({ categorySearch: q });
         get()._recompute();
@@ -254,6 +259,8 @@ export const useMoviesStore = create<MoviesStore>()(
         //    This helps when the native codec (e.g. H.265 in MKV) is unsupported.
         const hlsUrl = buildVodUrl(creds, streamId, 'm3u8');
         const candidates = ext !== 'm3u8' ? [hlsUrl] : [];
+
+        set({ lastFocusedMovieId: id });
 
         usePlayerStore.getState().setSource({
           id: `vod-${id}`,

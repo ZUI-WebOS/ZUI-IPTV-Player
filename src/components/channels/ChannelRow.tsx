@@ -8,24 +8,45 @@ import type { Channel } from '@/types/channel';
 
 interface Props {
   channel: Channel;
+  isFirst: boolean;
+  sidebarFocusKey: string;
   onSelect: () => void;
   onFocus: () => void;
   onToggleFavorite: () => void;
 }
 
-export function ChannelRow({ channel, onSelect, onFocus, onToggleFavorite }: Props) {
+export function ChannelRow({
+  channel,
+  isFirst,
+  sidebarFocusKey,
+  onSelect,
+  onFocus,
+  onToggleFavorite,
+}: Props) {
   const isFavorite = usePlaylistStore(s => s.favoriteIds.includes(channel.id));
   const nowNext = useNowNext(channel.id);
   const { showImg, onError, onLoad } = useChannelLogo(channel.logoUrl);
 
   const wasLongPressedRef = useRef(false);
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
 
-  const { ref, focused } = useFocusableScroll({
+  const { ref, focused, setFocus } = useFocusableScroll({
     focusKey: `channel-${channel.id}`,
     onFocus,
+    onArrowPress: (direction) => {
+      if (direction === 'left') {
+        setFocusRef.current?.(sidebarFocusKey);
+        return false;
+      }
+      if (direction === 'up' && isFirst) {
+        return false;
+      }
+      return true;
+    },
     block: 'nearest',
     inline: 'nearest',
   });
+  setFocusRef.current = setFocus;
 
   useLongPress({
     onLongPress: onToggleFavorite,

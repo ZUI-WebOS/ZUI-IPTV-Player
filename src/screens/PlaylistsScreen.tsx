@@ -408,7 +408,7 @@ export function PlaylistsScreen() {
           <div className="px-12 pt-8 pb-6 shrink-0">
             {/* Breadcrumb / konu */}
             <p className="text-[10px] uppercase tracking-[0.4em] text-white/25 font-semibold mb-1">
-              KAYNAKLAR · V{(import.meta.env.VITE_APP_VERSION as string | undefined) ?? '1.0.0'}
+              KAYNAKLAR · V{(import.meta.env.VITE_APP_VERSION as string | undefined) ?? '1.0.1'}
             </p>
 
             {/* Title row */}

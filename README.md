@@ -1,7 +1,7 @@
 # ZUI IPTV Player
 
 > Modern, keyboard/remote-navigable IPTV client built for **LG webOS TVs**.  
-> Supports M3U playlists, Xtream Codes (Live · VOD · Series), EPG, Cloud Sync and more.
+> Supports M3U playlists, Xtream Codes (Live · VOD · Series), EPG and more.
 
 ---
 
@@ -21,10 +21,6 @@
 |--------------|----------|
 | ![Player](docs/screenshots/player.png) | ![Settings](docs/screenshots/settings.png) |
 
-**Cloud Sync Web Panel** — [zui-sync-web.vercel.app](https://zui-sync-web.vercel.app)
-
-![Cloud Sync Web](docs/screenshots/web.png)
-
 ---
 
 ## Features
@@ -34,7 +30,8 @@
 - 📼 **Series** — season/episode browser with continue-watching support
 - 📡 **EPG** — XMLTV guide with timeline view
 - 🔄 **Multi-source** — M3U URL + Xtream Codes, multiple sources simultaneously
-- ☁️ **Cloud Sync** — push your playlist from browser/phone to TV via Supabase
+- 🛡️ **Safe 1.0.1 release posture** — legacy Cloud Sync is disabled until its
+  authentication and credential-transfer protocol is replaced
 - 🔤 **Subtitles** — CC quick-toggle in player OSD, size control (small/medium/large)
 - 🔒 **Parental control** — PIN-protected categories
 - 🌍 **5 languages** — Turkish, English, German, French, Spanish
@@ -55,16 +52,29 @@
 | MPEG-TS | mpegts.js 1.7 |
 | i18n | i18next + react-i18next |
 | DB (local) | IndexedDB via `idb` (EPG cache, channel cache) |
-| Cloud Sync | Supabase (Realtime + RLS) |
 | Build | Vite 5 + `@webos-tools/cli` |
 
 ---
 
-## Requirements
+## Compatibility and requirements
 
-- **LG webOS TV** (webOS 4.x or later) in Developer Mode
-- Node.js 18+
-- `@webos-tools/cli` (`npm i -g @webos-tools/cli`)
+The currently verified physical device is **LG 55NANO81T6A**, reporting SDK
+`10.3.1` and firmware `33.31.61`. Older platform versions are not yet part of
+the release acceptance matrix. In particular, webOS 4.5 has a reported black
+screen that has not been reproduced or closed by this project.
+
+- Installing a ready-made IPK: Windows 10/11 (64-bit), a Node.js version
+  supported by the selected webOS CLI, and an LG TV with Developer Mode enabled.
+  The current CLI 3.2.6 is tested on Node 24; the legacy pair
+  Node `16.20.2`/CLI `3.2.5` remains this project's reproduced packaging setup.
+- Building from source: Node.js 24 for TypeScript/Vite, plus Node.js `16.20.2`
+  for the webOS CLI packaging/install steps.
+- TV and PC must be reachable on the same network.
+
+See the verified Windows flow and SSH-key troubleshooting guide in
+[`docs/SIDELOAD.md`](docs/SIDELOAD.md).
+Optional Windows helpers for ready-made IPK users and source developers live in
+[`scripts/windows-setup/`](scripts/windows-setup/README.md).
 
 ---
 
@@ -75,7 +85,7 @@
 git clone https://github.com/Simulate-X/ZUI_IPTV_Player.git
 cd ZUI_IPTV_Player
 
-# Install deps
+# Install dependencies (Node.js 24)
 npm install
 
 # Start dev server (browser preview)
@@ -90,21 +100,29 @@ npm run dev
 
 Full sideload instructions: [`docs/SIDELOAD.md`](docs/SIDELOAD.md)
 
+Before distributing a build, also review the documented
+[`known issues`](docs/KNOWN_ISSUES.md) and
+[`Cloud Sync security status`](docs/SECURITY_STATUS.md).
+
 **Quick deploy:**
 
 ```bash
 # 1. Build
 npm run build
 
-# 2. Package → .ipk
-ares-package dist
+# 2. Package → dist-ipk/com.zui.player_1.0.1_all.ipk
+ares-package dist -o dist-ipk
 
 # 3. Install on TV (requires ares-setup-device done once)
-ares-install com.zui.player_1.0.0_all.ipk
+ares-install -d tv dist-ipk/com.zui.player_1.0.1_all.ipk
 
 # 4. Launch
-ares-launch com.zui.player
+ares-launch -d tv com.zui.player
 ```
+
+The repository also contains `scripts/deploy.ps1`, which builds with Node 24,
+switches to Node 16.20.2, packages, installs, and launches. Because it changes
+the active NVM version and writes to the TV, review the script before use.
 
 ---
 
@@ -114,20 +132,23 @@ ares-launch com.zui.player
 |------|-----------|
 | **M3U URL** | Onboarding → M3U List → paste URL |
 | **Xtream Codes** | Onboarding → Xtream Codes → host + user + pass |
-| **Cloud Sync** | Onboarding → ZUI Cloud Sync → scan QR on phone/browser |
+| **Cloud Sync** | Disabled in the public 1.0.1 build; use direct M3U/Xtream entry |
 
 ---
 
-## Cloud Sync Setup
+## Cloud Sync status in 1.0.1
 
-Cloud Sync lets you push a playlist from your phone or browser to the TV instantly.
+Cloud Sync is intentionally disabled in the public 1.0.1 build. Its application
+entry points are removed and client/configuration gates prevent a Supabase
+connection even when old local settings or Vite environment variables exist.
+The Home screen still contains the non-interactive legacy subtitle
+`M3U · Xtream · Cloud`; this is a cosmetic label only and does not enable the
+feature.
 
-1. Create a free [Supabase](https://supabase.com) project
-2. Run [`docs/cloud-sync/schema.sql`](docs/cloud-sync/schema.sql) in the SQL editor
-3. On TV: Settings → Cloud Sync Config → enter your Supabase URL + anon key
-4. Scan the QR code from the Onboarding screen with your phone
-
-> The anon key is safe client-side by design — Supabase Row Level Security ensures each TV can only read its own data. Never use the service-role key in this app.
+Direct M3U and Xtream entry remain available. A future replacement requires a
+new server-authorized pairing and credential-transfer design. See the public
+[`Cloud Sync security status`](docs/SECURITY_STATUS.md). Cloud Sync v2 remains a
+separate, approval-gated task.
 
 ---
 
@@ -174,4 +195,7 @@ docs/
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+ZUI IPTV Player source code is licensed under the [MIT License](LICENSE),
+Copyright (c) 2026 Kaan AYSAL. Third-party dependencies and assets remain
+subject to their own license notices; the project MIT license does not
+relicense those works.

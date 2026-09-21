@@ -53,8 +53,9 @@ if ($currentVer -notmatch "v24") {
     nvm use 24
     if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: nvm use 24" -ForegroundColor Red; exit 1 }
 
-    $n24dir = Get-NvmVersionDir "24.15.0"
-    if (-not $n24dir) { $n24dir = Get-NvmVersionDir "24" }  # minor/patch fark varsa
+    # `nvm use 24` hangi kurulu 24.x sürümünü seçtiyse NVM_SYMLINK üzerinden
+    # onu kullan. Eski bir patch sürümünü sabitleyip seçimi geri alma.
+    $n24dir = Get-NvmVersionDir "24"
     if ($n24dir) {
         $env:Path = "$n24dir;$env:Path"
         Write-Host "   Node 24 dir: $n24dir" -ForegroundColor Gray
@@ -112,10 +113,13 @@ if ($LASTEXITCODE -ne 0) { Write-Host "FAIL: ares-package" -ForegroundColor Red;
 
 Write-Host "-> Installing to TV (ares-install)..." -ForegroundColor Yellow
 
-# IPK adini bul (version'a göre değişebilir)
-$ipkFile = Get-ChildItem "dist-ipk\*.ipk" -ErrorAction SilentlyContinue | Select-Object -First 1
+# appinfo.json ile aynı kimlik/sürüme ait paketi seç. Klasörde kalmış eski bir
+# IPK'yı `Select-Object -First 1` ile yanlışlıkla TV'ye göndermeyelim.
+$appInfo = Get-Content "appinfo.json" -Raw | ConvertFrom-Json
+$expectedIpk = "dist-ipk\$($appInfo.id)_$($appInfo.version)_all.ipk"
+$ipkFile = Get-Item $expectedIpk -ErrorAction SilentlyContinue
 if (-not $ipkFile) {
-    Write-Host "FAIL: dist-ipk klasorunde .ipk dosyasi bulunamadi" -ForegroundColor Red; exit 1
+    Write-Host "FAIL: beklenen IPK bulunamadi: $expectedIpk" -ForegroundColor Red; exit 1
 }
 Write-Host "   IPK: $($ipkFile.Name)" -ForegroundColor Gray
 

@@ -9,6 +9,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { getSupabaseClient, isCloudSyncConfigured } from '@/lib/supabaseClient';
 import { useSourceStore } from '@/state/sourceStore';
 import { useCloudSyncRuntimeStore } from '@/state/cloudSyncRuntimeStore';
+import { RELEASE_FEATURES } from '@/config/releaseFeatures';
 
 // ─── Playlist yükleme yardımcısı ─────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ export const useSupabaseRealtime = (onSuccessCallback: () => void) => {
   // ─── Manuel yeniden yükleme ───────────────────────────────────────────────
 
   const checkAndLoad = useCallback(async () => {
+    if (!RELEASE_FEATURES.cloudSync) return;
     const { shortDeviceId, isChecking } = useCloudSyncRuntimeStore.getState();
     const client = clientRef.current;
     if (!shortDeviceId || !client || isChecking) return;
@@ -105,9 +107,9 @@ export const useSupabaseRealtime = (onSuccessCallback: () => void) => {
         const result = await loadPlaylist(pl);
         if (result.ok) {
           okCount++;
-          console.log('[ZUI-SYNC] Yüklendi:', pl.playlist_url);
+          console.log('[ZUI-SYNC] Liste başarıyla yüklendi.');
         } else {
-          console.error('[ZUI-SYNC] loadPlaylist hatası:', result.error, '→', pl.playlist_url);
+          console.error('[ZUI-SYNC] loadPlaylist hatası:', result.error);
           await client.from('playlists').update({ loaded: false }).eq('id', pl.id);
           useCloudSyncRuntimeStore.setState({
             checkError: `"${pl.playlist_name ?? pl.playlist_url}" yüklenemedi: ${result.error}`,
@@ -128,6 +130,17 @@ export const useSupabaseRealtime = (onSuccessCallback: () => void) => {
   // ─── Cloud Sync başlatma ──────────────────────────────────────────────────
 
   useEffect(() => {
+    if (!RELEASE_FEATURES.cloudSync) {
+      clientRef.current = null;
+      useCloudSyncRuntimeStore.setState({
+        isConfigured: false,
+        isListening: false,
+        isChecking: false,
+        checkError: null,
+        _triggerCheckAndLoad: null,
+      });
+      return;
+    }
     // checkAndLoad'u store'a kaydet — Onboarding butonu oradan çağırır.
     useCloudSyncRuntimeStore.setState({ _triggerCheckAndLoad: () => void checkAndLoad() });
 
@@ -143,7 +156,7 @@ export const useSupabaseRealtime = (onSuccessCallback: () => void) => {
     let cancelled    = false;
 
     const startCloudSyncFlow = async () => {
-      console.log('[ZUI-SYNC] Kimlik → shortId:', shortDeviceId, 'key:', deviceKey);
+      console.log('[ZUI-SYNC] Cihaz kimliği hazır:', shortDeviceId);
 
       const client = getSupabaseClient({ deviceId: shortDeviceId, deviceKey: deviceKey });
       if (!client) {

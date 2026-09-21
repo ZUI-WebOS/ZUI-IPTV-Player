@@ -3,7 +3,7 @@
 // Right panel: scrollable episode list for the active season.
 // TV-safe: D-pad navigates pills ↔ episodes; Back key closes.
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useFocusable, FocusContext } from '@noriginmedia/norigin-spatial-navigation';
 import { useTranslation } from 'react-i18next';
 import { useSeriesStore } from '@/state/seriesStore';
@@ -15,15 +15,43 @@ function SeasonTab({
   seasonNum,
   isActive,
   onSelect,
+  previousFocusKey,
+  nextFocusKey,
+  episodeFocusKey,
 }: {
   seasonNum: number;
   isActive: boolean;
   onSelect: () => void;
+  previousFocusKey: string | null;
+  nextFocusKey: string | null;
+  episodeFocusKey: string | null;
 }) {
-  const { ref, focused } = useFocusable({
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
+  const { ref, focused, setFocus } = useFocusable({
     focusKey: `EBM_S${seasonNum}`,
     onEnterPress: onSelect,
+    onArrowPress: (direction) => {
+      if (direction === 'left') {
+        if (previousFocusKey) setFocusRef.current?.(previousFocusKey);
+        return false;
+      }
+      if (direction === 'right') {
+        const target = nextFocusKey ?? episodeFocusKey;
+        if (target) setFocusRef.current?.(target);
+        return false;
+      }
+      if (direction === 'up') {
+        setFocusRef.current?.('EBM_CLOSE');
+        return false;
+      }
+      if (direction === 'down') {
+        setFocusRef.current?.('EBM_BACK');
+        return false;
+      }
+      return true;
+    },
   });
+  setFocusRef.current = setFocus;
 
   return (
     <button
@@ -48,15 +76,38 @@ function SeasonTab({
 function EpisodeRow({
   episode,
   onPlay,
+  previousFocusKey,
+  nextFocusKey,
+  seasonFocusKey,
 }: {
   episode: XtreamSeriesEpisode;
   onPlay: () => void;
+  previousFocusKey: string | null;
+  nextFocusKey: string | null;
+  seasonFocusKey: string;
 }) {
   const { t } = useTranslation();
-  const { ref, focused } = useFocusable({
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
+  const { ref, focused, setFocus } = useFocusable({
     focusKey: `EBM_E${episode.id}`,
     onEnterPress: onPlay,
+    onArrowPress: (direction) => {
+      if (direction === 'left') {
+        setFocusRef.current?.(seasonFocusKey);
+        return false;
+      }
+      if (direction === 'up') {
+        setFocusRef.current?.(previousFocusKey ?? 'EBM_CLOSE');
+        return false;
+      }
+      if (direction === 'down') {
+        if (nextFocusKey) setFocusRef.current?.(nextFocusKey);
+        return false;
+      }
+      return true;
+    },
   });
+  setFocusRef.current = setFocus;
 
   // Scroll into view when focused
   useEffect(() => {
@@ -131,9 +182,84 @@ function EpisodeRow({
   );
 }
 
+function CloseButton({ onClose, downFocusKey }: { onClose: () => void; downFocusKey: string }) {
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
+  const { ref, focused, setFocus } = useFocusable({
+    focusKey: 'EBM_CLOSE',
+    onEnterPress: onClose,
+    onArrowPress: (direction) => {
+      if (direction === 'down') {
+        setFocusRef.current?.(downFocusKey);
+        return false;
+      }
+      return true;
+    },
+  });
+  setFocusRef.current = setFocus;
+
+  return (
+    <button
+      ref={ref as React.RefObject<HTMLButtonElement>}
+      onClick={onClose}
+      className={[
+        'absolute top-6 right-8 z-10 w-9 h-9 rounded-full border bg-[#131110] grid place-items-center transition-all',
+        focused
+          ? 'border-[#E8B567]/60 text-[#E8B567] shadow-[0_0_20px_-6px_#E8B567] scale-[1.08]'
+          : 'border-white/[0.10] text-white/40 hover:text-white/70 hover:border-white/25',
+      ].join(' ')}
+      aria-label="Kapat"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    </button>
+  );
+}
+
+function BackButton({ onClose, upFocusKey, rightFocusKey }: {
+  onClose: () => void;
+  upFocusKey: string;
+  rightFocusKey: string;
+}) {
+  const { t } = useTranslation();
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
+  const { ref, focused, setFocus } = useFocusable({
+    focusKey: 'EBM_BACK',
+    onEnterPress: onClose,
+    onArrowPress: (direction) => {
+      if (direction === 'up') {
+        setFocusRef.current?.(upFocusKey);
+        return false;
+      }
+      if (direction === 'right') {
+        setFocusRef.current?.(rightFocusKey);
+        return false;
+      }
+      return true;
+    },
+  });
+  setFocusRef.current = setFocus;
+
+  return (
+    <button
+      ref={ref as React.RefObject<HTMLButtonElement>}
+      onClick={onClose}
+      className={[
+        'mt-auto px-3 h-9 rounded-lg border text-[10px] uppercase tracking-[0.3em] font-semibold text-left transition-all',
+        focused
+          ? 'border-[#E8B567]/55 bg-[#E8B567]/[0.08] text-[#E8B567] shadow-[0_0_18px_-7px_#E8B567]'
+          : 'border-transparent text-white/25',
+      ].join(' ')}
+    >
+      {t('episode_browser.back_hint')}
+    </button>
+  );
+}
+
 // ─── Main Modal ────────────────────────────────────────────────────────────────
 
-export function EpisodeBrowserModal() {
+export function EpisodeBrowserModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const series = useSeriesStore(s =>
     s.detailsSeriesId
@@ -144,28 +270,29 @@ export function EpisodeBrowserModal() {
   const status            = useSeriesStore(s => s.detailsStatus);
   const error             = useSeriesStore(s => s.detailsError);
   const activeSeason      = useSeriesStore(s => s.detailsActiveSeason);
-  const closeSeriesDetails      = useSeriesStore(s => s.closeSeriesDetails);
   const setDetailsActiveSeason  = useSeriesStore(s => s.setDetailsActiveSeason);
   const playEpisode             = useSeriesStore(s => s.playEpisode);
   const openSeriesDetails       = useSeriesStore(s => s.openSeriesDetails);
+  const playingEpisode          = useSeriesStore(s => s.playingEpisode);
 
   // Back / Backspace key → close
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Backspace' || e.key === 'GoBack' || e.keyCode === 461) {
         e.preventDefault();
-        closeSeriesDetails();
+        onClose();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [closeSeriesDetails]);
+  }, [onClose]);
 
   const { ref, focusKey, setFocus } = useFocusable({
     focusKey: 'EBM_ROOT',
     isFocusBoundary: true,
     trackChildren: true,
     saveLastFocusedChild: true,
+    autoRestoreFocus: false,
   });
 
   const { ref: seasonRailRef, focusKey: seasonRailFocusKey } = useFocusable({
@@ -177,13 +304,20 @@ export function EpisodeBrowserModal() {
   const seasonNums = info
     ? Object.keys(info.episodes).map(Number).sort((a, b) => a - b)
     : [];
+  const firstEpisodeFocusKey = seasonEpisodes[0] ? `EBM_E${seasonEpisodes[0].id}` : 'EBM_CLOSE';
+  const activeSeasonFocusKey = `EBM_S${activeSeason}`;
+  const seasonEntryFocusKey = seasonNums.length > 1 ? activeSeasonFocusKey : 'EBM_BACK';
 
-  // Auto-focus first episode when data loads or season changes
+  // Auto-focus the current episode after the player unmounts. Norigin may run
+  // a root-level debounced restore ~300 ms after the old player tree is gone;
+  // focusing after that prevents the stale restore from stealing modal focus.
   useEffect(() => {
     if (status === 'ready' && seasonEpisodes.length > 0) {
-      const firstEp = seasonEpisodes[0];
-      if (firstEp) {
-        const timer = setTimeout(() => setFocus(`EBM_E${firstEp.id}`), 80);
+      const targetEpisode = playingEpisode?.seasonKey === String(activeSeason)
+        ? seasonEpisodes.find(ep => ep.id === playingEpisode.episodeId) ?? seasonEpisodes[0]
+        : seasonEpisodes[0];
+      if (targetEpisode) {
+        const timer = setTimeout(() => setFocus(`EBM_E${targetEpisode.id}`), 380);
         return () => clearTimeout(timer);
       }
     }
@@ -200,22 +334,12 @@ export function EpisodeBrowserModal() {
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-[#0e0b0a]/85 backdrop-blur-sm"
-        onClick={closeSeriesDetails}
+        onClick={onClose}
       />
-
-      {/* Close button */}
-      <button
-        onClick={closeSeriesDetails}
-        className="absolute top-6 right-8 z-10 w-9 h-9 rounded-full border border-white/[0.10] bg-white/[0.05] grid place-items-center text-white/40 hover:text-white/70 hover:border-white/25 transition-all"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
 
       {/* Panel */}
       <FocusContext.Provider value={focusKey}>
+        <CloseButton onClose={onClose} downFocusKey={firstEpisodeFocusKey} />
         <div
           ref={ref as React.RefObject<HTMLDivElement>}
           className="relative w-[1120px] h-[660px] rounded-[28px] overflow-hidden border border-white/[0.08] flex"
@@ -265,12 +389,15 @@ export function EpisodeBrowserModal() {
                 </span>
                 <FocusContext.Provider value={seasonRailFocusKey}>
                   <div ref={seasonRailRef as React.RefObject<HTMLDivElement>} className="flex flex-wrap gap-2">
-                    {seasonNums.map(s => (
+                    {seasonNums.map((s, index) => (
                       <SeasonTab
                         key={s}
                         seasonNum={s}
                         isActive={s === activeSeason}
                         onSelect={() => setDetailsActiveSeason(s)}
+                        previousFocusKey={index > 0 ? `EBM_S${seasonNums[index - 1]}` : null}
+                        nextFocusKey={index < seasonNums.length - 1 ? `EBM_S${seasonNums[index + 1]}` : null}
+                        episodeFocusKey={firstEpisodeFocusKey}
                       />
                     ))}
                   </div>
@@ -278,10 +405,11 @@ export function EpisodeBrowserModal() {
               </div>
             )}
 
-            {/* Footer hint */}
-            <div className="mt-auto pt-3 text-[10px] uppercase tracking-[0.3em] text-white/20 font-semibold">
-              {t('episode_browser.back_hint')}
-            </div>
+            <BackButton
+              onClose={onClose}
+              upFocusKey={seasonNums.length > 1 ? activeSeasonFocusKey : 'EBM_CLOSE'}
+              rightFocusKey={firstEpisodeFocusKey}
+            />
           </div>
 
           {/* ── Right panel: episode list ── */}
@@ -345,11 +473,14 @@ export function EpisodeBrowserModal() {
             {/* Episode list */}
             {status === 'ready' && seasonEpisodes.length > 0 && (
               <div className="flex-1 overflow-y-auto px-3 py-3">
-                {seasonEpisodes.map(ep => (
+                {seasonEpisodes.map((ep, index) => (
                   <EpisodeRow
                     key={ep.id}
                     episode={ep}
                     onPlay={() => playEpisode(ep, series.title, String(activeSeason))}
+                    previousFocusKey={index > 0 ? `EBM_E${seasonEpisodes[index - 1].id}` : null}
+                    nextFocusKey={index < seasonEpisodes.length - 1 ? `EBM_E${seasonEpisodes[index + 1].id}` : null}
+                    seasonFocusKey={seasonEntryFocusKey}
                   />
                 ))}
               </div>

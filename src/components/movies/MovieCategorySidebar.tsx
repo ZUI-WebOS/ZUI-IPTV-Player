@@ -121,18 +121,35 @@ function CategorySearch() {
 function CategoryRow({
   category,
   isActive,
+  previousFocusKey,
+  nextFocusKey,
 }: {
   category: MovieCategory;
   isActive: boolean;
+  previousFocusKey: string | null;
+  nextFocusKey: string | null;
 }) {
   const setActiveCategory = useMoviesStore(s => s.setActiveCategory);
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
 
-  const { ref, focused } = useFocusableScroll({
+  const { ref, focused, setFocus } = useFocusableScroll({
     focusKey: `movie-cat-${category.id}`,
     onEnterPress: () => setActiveCategory(category.id),
+    onArrowPress: (direction) => {
+      if (direction === 'up') {
+        if (previousFocusKey) setFocusRef.current?.(previousFocusKey);
+        return false;
+      }
+      if (direction === 'down') {
+        if (nextFocusKey) setFocusRef.current?.(nextFocusKey);
+        return false;
+      }
+      return true;
+    },
     block: 'nearest',
     inline: 'nearest',
   });
+  setFocusRef.current = setFocus;
 
   const showLabelUpper = category.id !== '__resume__' && category.id !== '__favorites__';
 
@@ -203,6 +220,20 @@ export function MovieCategorySidebar() {
   const regulars = visible.filter(c =>
     c.id !== '__resume__' && c.id !== '__favorites__' && !hiddenCategoryIds.includes(c.id)
   );
+  const orderedCategories = [...specials, ...regulars];
+  const categoryFocusKeys = orderedCategories.map(c => `movie-cat-${c.id}`);
+
+  const focusKeysFor = (categoryId: string) => {
+    const index = orderedCategories.findIndex(c => c.id === categoryId);
+    return {
+      previousFocusKey: index > 0
+        ? categoryFocusKeys[index - 1]
+        : 'MOVIES_CATEGORY_SEARCH',
+      nextFocusKey: index >= 0 && index < categoryFocusKeys.length - 1
+        ? categoryFocusKeys[index + 1]
+        : null,
+    };
+  };
 
   const { ref, focusKey } = useFocusable({
     focusKey: 'MOVIES_SIDEBAR',
@@ -225,9 +256,18 @@ export function MovieCategorySidebar() {
               <div className="px-2 pt-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.35em] text-white/35">
                 {t('sidebar.library')}
               </div>
-              {specials.map(c => (
-                <CategoryRow key={c.id} category={c} isActive={c.id === activeCategory} />
-              ))}
+              {specials.map(c => {
+                const focusKeys = focusKeysFor(c.id);
+                return (
+                  <CategoryRow
+                    key={c.id}
+                    category={c}
+                    isActive={c.id === activeCategory}
+                    previousFocusKey={focusKeys.previousFocusKey}
+                    nextFocusKey={focusKeys.nextFocusKey}
+                  />
+                );
+              })}
               <hr className="my-3 mx-2 border-white/[0.06]" />
             </>
           )}
@@ -235,9 +275,18 @@ export function MovieCategorySidebar() {
           <div className="px-2 pt-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.35em] text-white/35">
             {t('sidebar.categories')} · {regulars.length}
           </div>
-          {regulars.map(c => (
-            <CategoryRow key={c.id} category={c} isActive={c.id === activeCategory} />
-          ))}
+          {regulars.map(c => {
+            const focusKeys = focusKeysFor(c.id);
+            return (
+              <CategoryRow
+                key={c.id}
+                category={c}
+                isActive={c.id === activeCategory}
+                previousFocusKey={focusKeys.previousFocusKey}
+                nextFocusKey={focusKeys.nextFocusKey}
+              />
+            );
+          })}
 
           {visible.length === 0 && (
             <div className="px-3 py-6 text-center text-white/40 font-serif italic text-[14px]">

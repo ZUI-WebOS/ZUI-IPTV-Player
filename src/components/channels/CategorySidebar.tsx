@@ -164,17 +164,19 @@ function SidebarItem({
 function HomeBackButton() {
   const { t } = useTranslation();
   const navigate = useUIStore((s) => s.navigate);
-  const { ref, focused } = useFocusable({
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
+  const { ref, focused, setFocus } = useFocusable({
     focusKey: 'sidebar-home-btn',
     onEnterPress: () => navigate('home'),
     onArrowPress: (dir) => {
       if (dir === 'up') {
-        // üst sınır — hareket yok
+        setFocusRef.current?.('topbar-nav-live');
         return false;
       }
       return true; // diğer yönler spatial nav'a bırak
     },
   });
+  setFocusRef.current = setFocus;
 
   return (
     <button
@@ -245,6 +247,10 @@ export function CategorySidebar() {
 
   const focusChannelList = () => {
     const s = usePlaylistStore.getState();
+    if (s.visibleChannels.length >= 100) {
+      setFocus('CHANNEL_LIST_VIRTUAL');
+      return;
+    }
     const lastFocused = s.lastFocusedChannelId;
     if (lastFocused && s.visibleChannels.some(c => c.id === lastFocused)) {
       setFocus(`channel-${lastFocused}`);

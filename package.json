@@ -1,13 +1,13 @@
 {
   "name": "zui-iptv-player",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && node --require ./scripts/crypto-polyfill.cjs node_modules/vite/bin/vite.js build && npm run copy:webos",
     "copy:webos": "shx cp appinfo.json icon.png largeIcon.png dist/",
     "package": "ares-package dist -o dist-ipk",
-    "install:tv": "ares-install -d tv dist-ipk/com.zui.player_1.0.0_all.ipk",
+    "install:tv": "ares-install -d tv dist-ipk/com.zui.player_1.0.1_all.ipk",
     "launch": "ares-launch -d tv com.zui.player",
     "inspect": "ares-inspect -d tv -a com.zui.player -o",
     "preview": "vite preview"

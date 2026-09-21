@@ -2,7 +2,7 @@
 // Global TopBar is rendered by App.tsx (same as channelList/epg/settings).
 // Layout: 22% sidebar + 1fr main (hero + grid).
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusable, FocusContext } from '@noriginmedia/norigin-spatial-navigation';
 import { useTranslation } from 'react-i18next';
 import { useMoviesStore } from '@/state/moviesStore';
@@ -16,9 +16,17 @@ export function MoviesScreen() {
   const status = useMoviesStore(s => s.status);
   const error = useMoviesStore(s => s.error);
   const loadVodData = useMoviesStore(s => s.loadVodData);
+  const lastFocusedMovieId = useMoviesStore(s => s.lastFocusedMovieId);
+  const setLastFocusedMovie = useMoviesStore(s => s.setLastFocusedMovie);
 
   const { t } = useTranslation();
-  const [focusedMovieId, setFocusedMovieId] = useState<string | null>(null);
+  const [focusedMovieId, setFocusedMovieId] = useState<string | null>(lastFocusedMovieId);
+  const initialFocusDone = useRef(false);
+
+  const handleFocusMovie = useCallback((id: string | null) => {
+    setFocusedMovieId(id);
+    setLastFocusedMovie(id);
+  }, [setLastFocusedMovie]);
 
   // Page-level focus context — declared BEFORE any conditional returns
   // so FocusContext is always mounted (loading/error states live inside it).
@@ -49,15 +57,36 @@ export function MoviesScreen() {
   // Set D-pad focus when data becomes ready.
   // Small delay (1 frame) lets the sidebar/grid DOM mount before setFocus.
   useEffect(() => {
-    if (status === 'ready') {
-      const t = setTimeout(() => setFocus('MOVIES_BACK_HOME'), 60);
+    if (status === 'ready' && !initialFocusDone.current) {
+      const restoreMovieId = lastFocusedMovieId && visibleMovies.some(m => m.id === lastFocusedMovieId)
+        ? lastFocusedMovieId
+        : null;
+      const t = setTimeout(() => {
+        if (initialFocusDone.current) return;
+        initialFocusDone.current = true;
+        if (restoreMovieId) {
+          setFocusedMovieId(restoreMovieId);
+          setFocus(
+            visibleMovies.length >= 50
+              ? 'MOVIES_GRID_VIRTUAL'
+              : `movie-${restoreMovieId}`
+          );
+        } else {
+          setFocus('MOVIES_BACK_HOME');
+        }
+      }, 60);
       return () => clearTimeout(t);
     }
-  }, [status, setFocus]);
+  }, [status, setFocus, lastFocusedMovieId, visibleMovies]);
 
   // When category changes, reset focused movie to the first visible one
   useEffect(() => {
-    setFocusedMovieId(visibleMovies[0]?.id ?? null);
+    const savedId = useMoviesStore.getState().lastFocusedMovieId;
+    setFocusedMovieId(
+      savedId && visibleMovies.some(m => m.id === savedId)
+        ? savedId
+        : (visibleMovies[0]?.id ?? null)
+    );
   }, [activeCategory, visibleMovies]);
 
   const focusedMovie =
@@ -112,7 +141,7 @@ export function MoviesScreen() {
               <MoviesHero movie={focusedMovie} />
               <MoviesGrid
                 focusedMovieId={focusedMovieId}
-                onFocusMovie={setFocusedMovieId}
+                onFocusMovie={handleFocusMovie}
               />
             </main>
           </div>

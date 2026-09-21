@@ -1,10 +1,31 @@
 # ZUI IPTV Player
 
-LG webOS TV için açık kaynak IPTV oynatıcısı (webOS 6.x, NANO81 serisi).
+LG webOS TV için IPTV oynatıcısı. Gerçek TV kabul testleri LG 55NANO81T6A
+(SDK 10.3.1, firmware 33.31.61) üzerinde yapılmıştır. Eski webOS sürümleri henüz
+doğrulanmış destek matrisinde değildir; webOS 4.5 siyah ekran bildirimi açıktır.
 
 ---
 
 ## Kurulum
+
+Windows 11 için güncel, adım adım kurulum ve SSH key sorun giderme kılavuzu:
+[`docs/SIDELOAD.md`](docs/SIDELOAD.md)
+
+Dağıtımdan önce [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) ve
+[`docs/SECURITY_STATUS.md`](docs/SECURITY_STATUS.md) belgelerini de inceleyin.
+
+### Hazır IPK kuracak kullanıcı
+
+Hazır `com.zui.player_1.0.1_all.ipk` kullanıyorsanız kaynak kodu, Git, NVM ve
+proje bağımlılıkları gerekmez. Seçtiğiniz webOS CLI sürümünün desteklediği tek
+bir Node sürümü yeterlidir. Güncel CLI 3.2.6 Node 24 ile test edilmiştir;
+Node 16.20.2/CLI 3.2.5 ise bu proje için daha önce doğrulanmış eski paketleme
+eşleşmesidir.
+
+İsteğe bağlı Windows yardımcıları:
+[`scripts/windows-setup/README.md`](scripts/windows-setup/README.md).
+
+### Kaynak kodundan derleyecek geliştirici
 
 ### Önkoşullar
 
@@ -20,7 +41,7 @@ nvm install 24
 
 # webOS CLI'yı GLOBAL olarak kur (Node 16 ile)
 nvm use 16.20.2
-npm install -g @webos-tools/cli
+npm install -g @webos-tools/cli@3.2.5
 
 # Repo bağımlılıkları (build için Node 24)
 nvm use 24
@@ -30,7 +51,7 @@ npm install
 ### TV Bağlantısı (bir kerelik)
 
 1. TV'de **Developer Mode** uygulamasını aç (LG Content Store'dan kurulur)
-2. Dev Mode'u aktif et, **IP adresi + Passphrase**'i not al
+2. Dev Mode'u aktif et, **IP adresini** not al ve **Key Server**'ı aç
 3. Bilgisayarda CLI ile cihazı tanımla:
 
 ```powershell
@@ -43,8 +64,7 @@ Etkileşimli sihirbazda:
 - Host: TV IP'si
 - Port: `9922`
 - SSH user: `prisoner`
-- Authentication: `password`
-- Password: TV Dev Mode uygulamasının gösterdiği passphrase
+- Password: boş bırakılır; güncel Developer Mode CLI akışında bu adımda parola gerekmez
 
 4. SSH özel anahtarını indir:
 
@@ -53,12 +73,14 @@ ares-novacom --device tv --getkey
 # Passphrase isteyecek (yine Dev Mode uygulamasından)
 ```
 
-Anahtar `~/.ssh/tv_webos` konumuna kaydedilir.
+Anahtar CLI'nin cihaz kaydında belirttiği özel anahtar adıyla kullanıcı `.ssh`
+dizinine kaydedilir. Dosya adı kurulumdan kuruluma değişebileceği için sabit bir
+ada güvenmeyin.
 
 5. Bağlantıyı doğrula:
 
 ```powershell
-ares-device-info --device tv
+ares-device --system-info --device tv
 ```
 
 Çıktıda TV'nin `modelName`, `productName`, `sdkVersion` gibi alanlar görünmeli.
@@ -80,20 +102,17 @@ npm run dev               # Tarayıcıda localhost:5173
 .\scripts\deploy.ps1      # Build (Node 24) + Yükleme (Node 16) hibrit pipeline
 ```
 
-İlk çalıştırmada PowerShell execution policy izni gerekebilir:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-```
+PowerShell betik çalıştırma politikası engellerse makine/kullanıcı politikasını
+kalıcı değiştirmek yerine yalnız bu süreç için
+`powershell -ExecutionPolicy Bypass -File .\scripts\deploy.ps1` kullanılabilir.
 
 Ya da adım adım:
 
 ```powershell
 nvm use 24
 npm run build
-npm run package
-
 nvm use 16.20.2
+npm run package
 npm run install:tv
 npm run launch
 ```
@@ -106,7 +125,7 @@ npm run launch
 |---|---|---|
 | `npm run dev` | 24 | Vite geliştirme sunucusu (tarayıcı önizlemesi) |
 | `npm run build` | 24 | Üretim build'i → `dist/` |
-| `npm run package` | 24 | IPK paketi → `dist-ipk/` |
+| `npm run package` | **16** | IPK paketi → `dist-ipk/com.zui.player_1.0.1_all.ipk` |
 | `npm run install:tv` | **16** | IPK'yı TV'ye yükle |
 | `npm run launch` | **16** | TV'de uygulamayı başlat |
 | `npm run inspect` | **16** | Uzaktan DevTools'u aç |
@@ -114,15 +133,14 @@ npm run launch
 
 ---
 
-## Faz 0 Kabul Kriterleri
+## Sürüm Kabul Özeti
 
-- [ ] `npm install` hatasız tamamlanır
-- [ ] `npm run dev` tarayıcıda "ZUI IPTV Player / Hazır." ekranını gösterir
-- [ ] `npm run build` → `dist/` içinde `appinfo.json`, `icon.png`, `largeIcon.png` var
-- [ ] `npm run package` → `dist-ipk/com.zui.player_0.1.0_all.ipk` üretilir
-- [ ] TV başlatıcısında "ZUI IPTV Player" görünür, doğru ikonla
-- [ ] Uygulama açılır, "Hazır." ekranı görünür, hata yoktur
-- [ ] BACK tuşu uygulamayı kapatır
+- [x] Node 24 ile TypeScript + Vite build başarılı
+- [x] Node 16.20.2 ile `com.zui.player_1.0.1_all.ipk` üretildi
+- [x] Temiz Windows 11 ortamında SSH key alma ve kimlik doğrulama akışı doğrulandı
+- [x] Sabit aday IPK gerçek TV'ye temiz kuruldu ve `com.zui.player` olarak başlatıldı
+- [x] Canlı TV, Filmler ve Diziler D-pad/BACK kabul dizileri tekrarlandı
+- [x] Açık bilinen sorunlar sürüm notlarında belirtildi
 
 ---
 
@@ -143,98 +161,35 @@ Odak sorunları için:
 
 ---
 
-## Cloud Sync (İsteğe Bağlı, Kendi Sunucunda Barındırma)
+## Cloud Sync durumu (1.0.1)
 
-Cloud Sync, uzun URL'leri kumandayla yazmak yerine telefon veya tarayıcıdan
-M3U ya da Xtream bağlantısını doğrudan TV'ye göndermenizi sağlar.  
-**Tamamen isteğe bağlıdır** — M3U URL ve Xtream Codes girişi bu özellik olmadan da çalışır.
+Cloud Sync, güvenli eşleştirme ve kimlik bilgisi aktarımı tamamlanana kadar
+**1.0.1 genel dağıtımında devre dışıdır**. Eski yöntem kısa ve deterministik bir
+cihaz anahtarı kullanıyor, M3U/Xtream bilgilerini düz metin taşıyabiliyor ve QR
+üretiminde üçüncü taraf bir servise veri gönderiyordu. Bu nedenle yalnız arayüz
+gizlenmedi:
 
-### Nasıl Çalışır
+- Onboarding ve Ayarlar ekranlarındaki Cloud Sync girişleri kaldırıldı.
+- Uygulama başlangıcındaki Supabase dinleyicisi kaldırıldı.
+- İstemci ve yapılandırma katmanları sabit sürüm bayrağıyla bağlantıyı reddeder.
+- Eski yerel ayarlar korunur ancak çalıştırılmaz; kullanıcı verisi silinmez.
+- `.env.local` veya `VITE_SUPABASE_*` değerleri özelliği yeniden açamaz.
 
-```
-Telefon / Tarayıcı ──► Web Arayüzü (zui-sync-web) ──► Supabase DB ──► TV Uygulaması (Gerçek Zamanlı)
-```
+Anasayfadaki `M3U · Xtream · Cloud` alt yazısında kalan “Cloud” sözcüğü yalnız
+kozmetik bir etikettir; özelliği etkinleştirmez.
 
-1. TV uygulaması açıldığında her iki kimlik doğrudan seri numarasından, **farklı djb2 seed'leriyle** senkron olarak türetilir:
-   - **TV Kimliği** (`A1B2-C3D4` gibi) — `djb2(seriNo, 0xdeadbeef)` → 8 hex karakter → `XXXX-XXXX`.
-     Yeniden kurulumda değişmez, her TV'ye özgüdür.
-   - **Cihaz Anahtarı** (`st5q8y` gibi 6 karakter) — `djb2(seriNo, 0xbeefdead)` → base36 → 6 karakter.
-     TV Kimliği bilinse dahi Cihaz Anahtarı geri döndürülemez; djb2 tek yönlüdür ve seed farklıdır.
-2. TV, `devices` tablosuna kendini kaydeder ve `playlists` tablosunu Supabase Realtime aracılığıyla dinlemeye başlar.
-3. Web arayüzü (`zui-sync-web`), TV Kimliği ve Cihaz Anahtarını doğrular, ardından bir playlist satırı ekler.
-4. TV, satırı anında alır (Realtime INSERT olayı) ve kaynağı yükler.
-
-### Kurulum Adımları
-
-**1. Ücretsiz bir Supabase projesi oluşturun**
-
-<https://supabase.com> → Yeni Proje. **Proje URL'sini** ve **anon / public** API anahtarını not alın.
-
-**2. Şemayı çalıştırın**
-
-Supabase kontrol panelindeki SQL Düzenleyicisi'ni açın ve
-[`docs/cloud-sync/schema.sql`](docs/cloud-sync/schema.sql) dosyasının içeriğini yapıştırın.  
-Bu işlem, Satır Düzeyi Güvenlik (RLS) politikalarıyla birlikte `devices` ve `playlists`
-tablolarını oluşturur.
-
-**3. Gerçek Zamanlı Özelliği Etkinleştirin**
-
-Supabase kontrol panelinde: **Database → Replication** → `playlists` tablosunu etkinleştirin.
-(Şema SQL bunu zaten yapar, ancak kontrol paneli geçişi de eşleşmelidir.)
-
-**4. TV uygulamasını yapılandırın**
-
-Seçenek A — Derleme zamanı (kendi fork'unuz için önerilir):
-
-```
-# .env.example dosyasını .env.local olarak kopyalayın ve doldurun
-VITE_SUPABASE_URL=https://projeniz.supabase.co
-VITE_SUPABASE_ANON_KEY=anon-anahtariniz
-```
-
-Seçenek B — Çalışma zamanı (yeniden derleme gerekmez):
-
-TV'de **Ayarlar → Cloud Sync Yapılandırması**'na gidin ve URL ile anon anahtarı yapıştırın.
-Çalışma zamanı değeri, derleme zamanı ortam değişkenlerini geçersiz kılar.
-
-**5. Web arayüzünü yapılandırın**
-
-`zui-sync-web/` klasöründe `.env.example` dosyasını `.env.local` olarak kopyalayın ve
-aynı Supabase URL ile anon anahtarı girin:
-
-```
-NEXT_PUBLIC_SUPABASE_URL=https://projeniz.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=anon-anahtariniz
-```
-
-Web arayüzünü Vercel'e veya herhangi bir Next.js barındırma platformuna deploy edin.
-
-**6. Kullanın**
-
-- TV uygulamasını açın → Başlangıç → **ZUI Cloud Sync**.
-- Ekranda görünen **TV Kimliği** (`A1B2-C3D4` gibi) ve **Cihaz Anahtarı** (`st5q8y` gibi) değerlerini not alın.
-- Telefon veya bilgisayarınızda web arayüzü URL'sini açın.
-- TV Kimliği ve Cihaz Anahtarını girin → doğrulayın.
-- M3U URL'nizi veya Xtream kimlik bilgilerinizi yapıştırın → gönderin.
-- TV'de **Yeniden Yükle**'ye basın ya da bekleyin — liste Realtime aracılığıyla otomatik olarak gelir.
-
-### Güvenlik Notları
-
-- **Anon anahtarı**, istemci tarafı koduna yerleştirmek için güvenlidir (Supabase tasarımı).
-  RLS politikaları, erişim denetimini veritabanı düzeyinde sağlar.
-- **TV Kimliği tek başına asla yeterli değildir.** `playlists` tablosundaki her okuma, yazma ve
-  ekleme işlemi; istek başlıklarında hem doğru `device_id` hem de `device_key` bulunmasını gerektirir
-  (`x-zui-device-id`, `x-zui-device-key`).
-- Hiçbir cihaz, başka bir cihazın satırlarını veya anahtarlarını okuyamaz ya da listeleyemez.
-- TV Kimliği ve Cihaz Anahtarı, TV'nin **donanım seri numarasından** deterministik olarak türetilir —
-  rastgele değil, yeniden kurulumda değişmez, cihaza özgüdür.
-  Her iki değer farklı djb2 seed'leri kullandığından biri bilinse diğeri hesaplanamaz.
+M3U URL ve Xtream Codes doğrudan girişi çalışmaya devam eder. Gelecekteki bir
+sürüm için yeni, sunucu tarafından yetkilendirilen bir eşleştirme ve kimlik
+bilgisi aktarım tasarımı gerekir. Kamuya açık durum özeti
+[`docs/SECURITY_STATUS.md`](docs/SECURITY_STATUS.md) belgesindedir. Cloud Sync
+v2 ayrı ve onaya bağlı bir sonraki görevdir.
 
 ---
 
 ## Notlar
 
-- Dev Mode oturumu **1000 saat** ile sınırlıdır; periyodik olarak uzatılmalıdır.
+- Dev Mode oturumu sınırlıdır. TV'deki **Remain Session** değerini izleyin ve
+  süre dolmadan **EXTEND** kullanın; sabit saat değeri varsaymayın.
 - `dist-ipk/` klasörü `.gitignore`'da; IPK'lar commit edilmez.
-- Gerçek ikon tasarımı Faz 5'te yapılacak.
-- webOS CLI (`ares-*`) komutları **Node 16** ile çalışır; build toolchain **Node 24** gerektirir.
+- Bu checkout'un yeniden üretilmiş paketleme zinciri CLI 3.2.5/Node 16.20.2'dir;
+  güncel CLI 3.2.6 ise Node 24 ile test edilmiştir. Build toolchain Node 24 kullanır.

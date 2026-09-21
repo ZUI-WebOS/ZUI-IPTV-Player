@@ -124,6 +124,9 @@ export function ChannelListPro({
   const { t } = useTranslation();
   const channels = usePlaylistStore(s => s.visibleChannels);
   const activeCategory = usePlaylistStore(s => s.activeCategory);
+  const activeSourceFilter = usePlaylistStore(s => s.activeSourceFilter);
+  const allCategories = usePlaylistStore(s => s.categories);
+  const hiddenCategories = usePlaylistStore(s => s.hiddenCategories);
   const listRef = useRef<ListImperativeAPI>(null);
   const [containerHeight, setContainerHeight] = useState(600);
 
@@ -138,6 +141,21 @@ export function ChannelListPro({
       : activeCategory ?? t('channel_list.all');
 
   const isVirtualized = channels.length >= VIRTUALIZATION_THRESHOLD;
+  const visibleCategories = allCategories.filter((c) => !hiddenCategories.has(c.name));
+  const activeCategoryIndex = activeCategory
+    ? visibleCategories.findIndex((c) => c.name === activeCategory)
+    : -1;
+  const sidebarFocusKey = activeCategory === '__favorites__'
+    ? 'sidebar-favorites'
+    : activeCategory === '__recent__'
+      ? 'sidebar-recent'
+      : activeCategoryIndex >= 0
+        ? `sidebar-cat-${activeCategoryIndex + 1}`
+        : activeSourceFilter !== 'all'
+          ? `sidebar-source-${activeSourceFilter}`
+          : 'sidebar-all';
+
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
 
   // ─── Virtualized list: single focusable container ─────────────────────────
   // onArrowPress returns false for up/down to prevent norigin default nav;
@@ -171,9 +189,14 @@ export function ChannelListPro({
       return false;
     }
 
-    // left/right → let norigin handle (sidebar / preview pane navigation)
+    if (direction === 'left') {
+      setFocusRef.current?.(sidebarFocusKey);
+      return false;
+    }
+
+    // right → let norigin handle preview pane navigation
     return true;
-  }, [isVirtualized, channels, onFocusChannel]);
+  }, [isVirtualized, channels, onFocusChannel, sidebarFocusKey]);
 
   // Enter press → select channel; long-press Enter → toggle favorite
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -201,15 +224,16 @@ export function ChannelListPro({
     }
   }, [isVirtualized, channels, onSelectChannel]);
 
-  const { ref: focusRef, focusKey, focused } = useFocusable({
+  const { ref: focusRef, focusKey, focused, setFocus } = useFocusable({
     focusKey: 'CHANNEL_LIST_VIRTUAL',
     onArrowPress: handleArrowPress,
     onEnterPress: handleEnterPress,
     onEnterRelease: handleEnterRelease,
-    // Keep norigin focus within list bounds when navigating up from row 0
-    // or down from last row. Left/right still escape.
+    // Up/down are consumed by the virtual list; LEFT is routed explicitly.
+    // RIGHT remains available for normal spatial navigation.
     isFocusBoundary: false,
   });
+  setFocusRef.current = setFocus;
 
   // Sync focusedIndex when focusedChannelId changes externally (e.g., initial focus restore)
   useEffect(() => {
@@ -276,10 +300,12 @@ export function ChannelListPro({
       <FocusContext.Provider value={focusKey}>
         <div ref={focusRef as React.RefObject<HTMLDivElement>} className="w-full h-full relative overflow-y-auto pr-1">
           {header}
-          {channels.map((channel) => (
+          {channels.map((channel, index) => (
             <ChannelRow
               key={channel.id}
               channel={channel}
+              isFirst={index === 0}
+              sidebarFocusKey={sidebarFocusKey}
               onSelect={() => onSelectChannel(channel.id)}
               onFocus={() => onFocusChannel(channel.id)}
               onToggleFavorite={() => onToggleFavorite(channel.id)}

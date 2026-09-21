@@ -1,5 +1,5 @@
 // Onboarding — 3-adımlı State Machine (tam ekran, modal yok)
-// Step: 'select' → 'cloud' | 'm3u' | 'xtream' → 'syncing'
+// Step: 'select' → 'm3u' | 'xtream' → 'syncing'
 // Aynı zamanda PlaylistsScreen'in "empty state" geçişini tetikler.
 
 import { useState, useEffect, useCallback } from 'react';
@@ -9,19 +9,17 @@ import { FocusableInput } from '@/components/common/FocusableInput';
 import { useSourceStore } from '@/state/sourceStore';
 import { usePlaylistStore } from '@/state/playlistStore';
 import { useUIStore } from '@/state/uiStore';
-import { useCloudSyncRuntimeStore } from '@/state/cloudSyncRuntimeStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Step = 'select' | 'cloud' | 'm3u' | 'xtream' | 'syncing';
+type Step = 'select' | 'm3u' | 'xtream' | 'syncing';
 type FormType = 'm3u' | 'xtream';
 
-const VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? '1.0.0';
+const VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? '1.0.1';
 
 // Step → ilk odaklanacak focusKey haritası
 const STEP_FOCUS: Record<Step, string> = {
-  select:  'OB_CARD_CLOUD',   // ilk odak kart üzerinde; Geri butonu sol üstte
-  cloud:   'OB_CLOUD_BACK',
+  select:  'OB_CARD_M3U',     // Cloud Sync 1.0.1 genel sürümünde kapalıdır
   m3u:     'OB_M3U_URL',
   xtream:  'OB_XT_HOST',
   syncing: 'ONBOARDING',
@@ -83,55 +81,6 @@ function MethodCard({
         </span>
         <span className="text-[12px] text-white/40 leading-relaxed whitespace-pre-line">{subtitle}</span>
       </div>
-    </button>
-  );
-}
-
-// ─── Reload Button ────────────────────────────────────────────────────────────
-
-function ReloadButton({
-  focusKey: fk,
-  onPress,
-  loading,
-  disabled,
-}: {
-  focusKey: string;
-  onPress: () => void;
-  loading: boolean;
-  disabled: boolean;
-}) {
-  const { t } = useTranslation();
-  const { ref, focused } = useFocusable({
-    focusKey: fk,
-    onEnterPress: disabled || loading ? undefined : onPress,
-  });
-
-  return (
-    <button
-      ref={ref as React.RefObject<HTMLButtonElement>}
-      onClick={disabled || loading ? undefined : onPress}
-      disabled={disabled || loading}
-      className={[
-        'inline-flex items-center gap-2.5 px-6 py-3 rounded-xl text-[13px] font-semibold tracking-wide transition-all duration-150',
-        disabled || loading
-          ? 'bg-white/[0.04] text-white/20 border border-white/[0.06] cursor-not-allowed'
-          : focused
-            ? 'bg-[#E8B567]/15 text-[#E8B567] border border-[#E8B567]/50 scale-[1.04] shadow-[0_0_20px_-6px_#E8B567]'
-            : 'bg-white/[0.05] text-white/55 border border-white/10',
-      ].join(' ')}
-    >
-      {loading ? (
-        <span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin shrink-0" />
-      ) : (
-        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor"
-          strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-          <path d="M21 3v5h-5" />
-          <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-          <path d="M8 16H3v5" />
-        </svg>
-      )}
-      {loading ? t('onboarding.checking') : t('onboarding.reload')}
     </button>
   );
 }
@@ -246,7 +195,7 @@ function SelectStep({
   onSelect,
   onBack,
 }: {
-  onSelect: (method: 'cloud' | 'm3u' | 'xtream') => void;
+  onSelect: (method: 'm3u' | 'xtream') => void;
   onBack: () => void;
 }) {
   const { t } = useTranslation();
@@ -279,18 +228,11 @@ function SelectStep({
       {/* Method cards */}
       <div className="flex gap-6">
         <MethodCard
-          focusKey="OB_CARD_CLOUD"
-          icon="✨"
-          title="ZUI Cloud Sync"
-          subtitle={t('onboarding.cloud_card_subtitle')}
-          recommended
-          onPress={() => onSelect('cloud')}
-        />
-        <MethodCard
           focusKey="OB_CARD_M3U"
           icon="📋"
           title={t('onboarding.m3u_title')}
           subtitle={t('onboarding.m3u_card_subtitle')}
+          recommended
           onPress={() => onSelect('m3u')}
         />
         <MethodCard
@@ -300,144 +242,6 @@ function SelectStep({
           subtitle={t('onboarding.xtream_card_subtitle')}
           onPress={() => onSelect('xtream')}
         />
-      </div>
-    </div>
-  );
-}
-
-// ─── Step: Cloud Sync ─────────────────────────────────────────────────────────
-
-// onSuccess artık App.tsx seviyesinde useSupabaseRealtime tarafından yönetilir.
-// Prop geriye uyumluluk için tutulur; CloudStep içinde kullanılmaz.
-function CloudStep({ onBack }: { onBack: () => void; onSuccess?: () => void }) {
-  const { t } = useTranslation();
-  const {
-    shortDeviceId, deviceKey,
-    isConfigured, isListening,
-    isChecking, checkError,
-    _triggerCheckAndLoad,
-  } = useCloudSyncRuntimeStore();
-  const checkAndLoad = _triggerCheckAndLoad ?? (() => {});
-
-  return (
-    <div className="flex flex-col h-full px-16 py-10">
-      <BackButton focusKey="OB_CLOUD_BACK" onPress={onBack} />
-
-      <div className="mt-8 mb-2">
-        <h2 className="font-serif text-[34px] font-light text-white leading-tight">{t('onboarding.cloud_title')}</h2>
-        <p className="text-[14px] text-white/45 mt-2 leading-relaxed">
-          {t('onboarding.cloud_desc')}
-        </p>
-      </div>
-
-      {/* Instructions — tek sütun */}
-      <div className="flex flex-col gap-5 mt-8">
-        {/* Adım 1 */}
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] uppercase tracking-[0.3em] text-white/30 font-semibold">
-            {t('onboarding.cloud_step1')}
-          </span>
-          <div className="flex items-center gap-3 px-5 py-3.5 rounded-xl bg-white/[0.04] border border-white/[0.07]">
-            <span className="text-[18px]">🌐</span>
-            <span className="font-mono text-[14px] text-[#E8B567]/85 tracking-wide">zui-sync-web.vercel.app</span>
-          </div>
-        </div>
-
-        {/* Adım 2 — Cihaz Kimliği + Anahtar */}
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] uppercase tracking-[0.3em] text-white/30 font-semibold">
-            {t('onboarding.cloud_step2')}
-          </span>
-          <div className="flex gap-3">
-            {/* Sol: TV Kimliği */}
-            <div className="flex-1 flex items-center gap-4 px-5 py-3.5 rounded-xl bg-white/[0.04] border border-white/[0.07]">
-              <span className="text-[18px]">🖥</span>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] text-white/25 uppercase tracking-wider">{t('onboarding.tv_id_label')}</span>
-                <span className="font-mono text-[18px] text-white/80 tracking-wider">{shortDeviceId}</span>
-                <span className="text-[9px] text-white/20 mt-0.5">{t('onboarding.tv_id_note')}</span>
-              </div>
-            </div>
-
-            {/* Sağ: Cihaz Anahtarı — asıl kullanıcı girdisi */}
-            <div className="flex-1 flex items-center gap-4 px-5 py-3.5 rounded-xl bg-white/[0.04] border border-white/[0.07]">
-              <span className="text-[18px]">🔑</span>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] text-white/25 uppercase tracking-wider">{t('onboarding.device_key_label')}</span>
-                <span className="font-mono text-[22px] text-[#E8B567]/90 tracking-[0.4em] font-semibold leading-none pt-1">{deviceKey}</span>
-                <span className="text-[9px] text-white/20 mt-0.5">{t('onboarding.device_key_note')}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Status indicator */}
-      {!isConfigured ? (
-        <div className="mt-5 flex items-start gap-3 px-4 py-3 rounded-xl bg-[#E8B567]/[0.06] border border-[#E8B567]/20 text-[13px] text-[#E8B567]/70 max-w-[520px]">
-          <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" />
-          </svg>
-          <span>{t('onboarding.not_configured_msg')}</span>
-        </div>
-      ) : (
-        <div className={[
-          'mt-5 flex items-center gap-3 text-[13px]',
-          isListening ? 'text-emerald-400/80' : 'text-white/35',
-        ].join(' ')}>
-          <span className={[
-            'w-2 h-2 rounded-full shrink-0 transition-all',
-            isListening
-              ? 'bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse'
-              : 'bg-white/20',
-          ].join(' ')} />
-          {isListening
-            ? t('onboarding.listening')
-            : t('onboarding.connecting_cloud')}
-        </div>
-      )}
-
-      {/* QR + Yeniden Yükle — alt orta */}
-      <div className="flex-1 flex flex-col items-center justify-end pb-4 gap-3 mt-6">
-        {/* QR, TV Kimliği + Cihaz Anahtarı'nı URL parametresi olarak içerir.
-            Taranan telefon web arayüzüne doğrudan doğrulamaya hazır şekilde açılır. */}
-        <div className="w-[220px] h-[220px] rounded-2xl border border-white/10 bg-white p-2.5 overflow-hidden">
-          <img
-            src={`https://api.qrserver.com/v1/create-qr-code/?size=440x440&data=${encodeURIComponent(`https://zui-sync-web.vercel.app/?id=${shortDeviceId}&key=${deviceKey}`)}&margin=0`}
-            alt={t('onboarding.qr_alt')}
-            className="w-full h-full rounded-lg object-cover"
-          />
-        </div>
-        <div className="flex flex-col items-center gap-0.5">
-          <p className="text-[10px] text-white/25 uppercase tracking-[0.3em]">{t('onboarding.qr_hint')}</p>
-          <p className="text-[10px] text-white/18 tracking-[0.15em]">zui-sync-web.vercel.app</p>
-        </div>
-
-        {/* Yeniden Yükle butonu */}
-        <ReloadButton
-          focusKey="OB_CLOUD_RELOAD"
-          onPress={() => void checkAndLoad()}
-          loading={isChecking}
-          disabled={!isConfigured || !isListening}
-        />
-
-        {/* Hata mesajı */}
-        {checkError && !isChecking && (
-          <div className="max-w-[480px] flex items-start gap-2.5 px-4 py-3 rounded-xl bg-red-500/[0.08] border border-red-500/20">
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" fill="none"
-              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-            <span className="text-red-400/90 text-[11px] leading-relaxed">{checkError}</span>
-          </div>
-        )}
-
-        {/* Tip */}
-        <div className="mt-1 max-w-[540px] px-4 py-3 rounded-xl bg-white/[0.025] border border-white/[0.05]">
-          <p className="text-[11px] text-white/30 leading-relaxed text-center">
-            {t('onboarding.cloud_tip')}
-          </p>
-        </div>
       </div>
     </div>
   );
@@ -727,10 +531,6 @@ export function Onboarding() {
             }}
             onBack={() => navigate('home')}
           />
-        )}
-
-        {step === 'cloud' && (
-          <CloudStep onBack={goBack} onSuccess={handleSuccess} />
         )}
 
         {step === 'm3u' && (

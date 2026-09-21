@@ -11,25 +11,43 @@ import type { Series } from '@/types/series';
 
 interface Props {
   series: Series;
+  isFirstColumn: boolean;
+  sidebarFocusKey: string;
   onSelect: () => void;
   onFocus: () => void;
   onToggleWatchlist: () => void;
 }
 
-export function SeriesCard({ series, onSelect, onFocus, onToggleWatchlist }: Props) {
+export function SeriesCard({
+  series,
+  isFirstColumn,
+  sidebarFocusKey,
+  onSelect,
+  onFocus,
+  onToggleWatchlist,
+}: Props) {
   const { t } = useTranslation();
   const isInWatchlist = useSeriesStore(s => s.watchlistIds.includes(series.id));
   const progress = useSeriesStore(s => s.watchProgress[series.id] ?? 0);
   const { showImg, onError, onLoad } = useSeriesPoster(series.posterUrl);
 
   const wasLongPressedRef = useRef(false);
+  const setFocusRef = useRef<((key: string) => void) | null>(null);
 
-  const { ref, focused } = useFocusableScroll({
+  const { ref, focused, setFocus } = useFocusableScroll({
     focusKey: `series-${series.id}`,
     onFocus,
+    onArrowPress: (direction) => {
+      if (direction === 'left' && isFirstColumn) {
+        setFocusRef.current?.(sidebarFocusKey);
+        return false;
+      }
+      return true;
+    },
     block: 'nearest',
     inline: 'nearest',
   });
+  setFocusRef.current = setFocus;
 
   useLongPress({
     onLongPress: onToggleWatchlist,

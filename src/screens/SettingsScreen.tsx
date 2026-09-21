@@ -6,7 +6,6 @@ import { usePlaylistStore } from '@/state/playlistStore';
 import { useParentalStore } from '@/state/parentalStore';
 import { useToast } from '@/components/ui/Toast';
 import { PinSetupModal } from '@/components/parental/PinSetupModal';
-import { useCloudSyncConfigStore, getSupabaseConfig } from '@/state/cloudSyncConfigStore';
 import { useMoviesStore } from '@/state/moviesStore';
 import { useSeriesStore } from '@/state/seriesStore';
 import { useSettingsStore, LANGUAGE_NAMES, type Language, type SubtitleSize } from '@/state/settingsStore';
@@ -78,13 +77,6 @@ const IconChevronLeft = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
     strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
     <path d="M15 18l-6-6 6-6" />
-  </svg>
-);
-
-const IconCloud = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
-    strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7">
-    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
   </svg>
 );
 
@@ -738,129 +730,10 @@ function ParentalDetailModal({
   );
 }
 
-// ─── Modal: Cloud Sync Yapılandırması ─────────────────────────────────────────
-
-function CloudSyncConfigModal({ onClose }: { onClose: () => void }) {
-  const { t } = useTranslation();
-  const { runtimeUrl, runtimeAnonKey, setConfig, clearConfig } = useCloudSyncConfigStore();
-  const current = getSupabaseConfig();
-
-  const [url,     setUrl]     = useState(runtimeUrl);
-  const [anonKey, setAnonKey] = useState(runtimeAnonKey);
-  const [saved,   setSaved]   = useState(false);
-
-  const isEnvConfigured =
-    !runtimeUrl && !runtimeAnonKey && current !== null;
-
-  const handleSave = () => {
-    const trimUrl = url.trim();
-    const trimKey = anonKey.trim();
-    if (!trimUrl || !trimKey) {
-      useToast.getState().show(t('modal.cloud_sync.err_required'));
-      return;
-    }
-    if (!trimUrl.startsWith('https://')) {
-      useToast.getState().show(t('modal.cloud_sync.err_https'));
-      return;
-    }
-    setConfig(trimUrl, trimKey);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-  };
-
-  const handleClear = () => {
-    clearConfig();
-    setUrl('');
-    setAnonKey('');
-    useToast.getState().show(t('modal.cloud_sync.cleared'));
-  };
-
-  return (
-    <ModalBase
-      focusKey="CLOUD_SYNC_MODAL"
-      initialFocus="cloud-sync-close"
-      title={t('modal.cloud_sync.title')}
-      onClose={onClose}
-    >
-      <p className="font-serif italic text-[13px] text-white/40 mb-5 leading-relaxed">
-        {t('modal.cloud_sync.description')}
-      </p>
-
-      {isEnvConfigured && (
-        <div className="mb-5 flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-500/[0.07] border border-emerald-500/20">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] shrink-0" />
-          <span className="text-[12px] text-emerald-400/80">
-            {t('modal.cloud_sync.env_active')}
-          </span>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-4 mb-5">
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[10px] uppercase tracking-[0.3em] text-white/30 font-semibold">
-            {t('modal.cloud_sync.url_label')}
-          </label>
-          <input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://your-project.supabase.co"
-            className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08]
-                       text-[14px] text-white/80 placeholder-white/20 outline-none
-                       focus:border-[#E8B567]/35 focus:bg-[#E8B567]/[0.03] transition-colors font-mono"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[10px] uppercase tracking-[0.3em] text-white/30 font-semibold">
-            {t('modal.cloud_sync.key_label')}
-          </label>
-          <input
-            value={anonKey}
-            onChange={(e) => setAnonKey(e.target.value)}
-            placeholder="sb_publishable_…"
-            className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08]
-                       text-[14px] text-white/80 placeholder-white/20 outline-none
-                       focus:border-[#E8B567]/35 focus:bg-[#E8B567]/[0.03] transition-colors font-mono"
-          />
-        </div>
-      </div>
-
-      {saved && (
-        <div className="mb-4 flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/[0.07] border border-emerald-500/20 text-[13px] text-emerald-400/80">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 shrink-0">
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
-          {t('modal.cloud_sync.saved')}
-        </div>
-      )}
-
-      <div className="flex items-center justify-between gap-3 mt-2">
-        {(runtimeUrl || runtimeAnonKey) && (
-          <button
-            onClick={handleClear}
-            className="px-4 py-2 rounded-xl text-[13px] text-red-400/70 border border-red-500/15 bg-red-500/[0.05] hover:bg-red-500/10 transition-colors"
-          >
-            {t('modal.cloud_sync.clear')}
-          </button>
-        )}
-        <div className={['flex gap-3 ml-auto'].join(' ')}>
-          <ModalCloseBtn focusKey="cloud-sync-close" onPress={onClose} />
-          <ModalCloseBtn focusKey="cloud-sync-save" onPress={handleSave} label={t('modal.cloud_sync.save')} />
-        </div>
-      </div>
-
-      <p className="mt-5 text-[10px] text-white/20 leading-relaxed">
-        {t('modal.cloud_sync.anon_note')}
-      </p>
-    </ModalBase>
-  );
-}
-
 // ─── webOS device info ────────────────────────────────────────────────────────
 
 function useDeviceInfo() {
   const [mac, setMac] = useState('—');
-  const [key, setKey] = useState('—');
   useEffect(() => {
     try {
       const w = window as unknown as {
@@ -868,11 +741,10 @@ function useDeviceInfo() {
       };
       w.webOS?.deviceInfo?.((i) => {
         if (i.macAddress) setMac(i.macAddress);
-        if (i.serialNumber) setKey(i.serialNumber.slice(-6));
       });
     } catch { /* not on webOS */ }
   }, []);
-  return { mac, key };
+  return { mac };
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
@@ -888,7 +760,6 @@ type Modal =
   | 'hide-series-categories' // Dizi kategorileri
   | 'language'               // Dil seçimi
   | 'subtitle-settings'     // Altyazı ayarları
-  | 'cloud-sync'
   | null;
 
 export function SettingsScreen() {
@@ -898,7 +769,7 @@ export function SettingsScreen() {
   const unlockedThisSession  = useParentalStore((s) => s.unlockedThisSession);
   const lockSession          = useParentalStore((s) => s.lockSession);
   const hiddenCategories     = usePlaylistStore((s) => s.hiddenCategories);
-  const { mac, key: deviceKey } = useDeviceInfo();
+  const { mac } = useDeviceInfo();
   const [modal, setModal] = useState<Modal>(null);
   const { timeFormat, setTimeFormat, language, subtitleEnabled, subtitleSize } = useSettingsStore();
 
@@ -1047,14 +918,6 @@ export function SettingsScreen() {
       badge: { label: t('settings.badge.on'), variant: 'on' },
       onPress: v2Stub,
     },
-    {
-      id: 'cloud-0',
-      icon: <IconCloud />,
-      title: t('settings.cloud_sync.title'),
-      subtitle: getSupabaseConfig() ? t('settings.cloud_sync.configured') : t('settings.cloud_sync.not_configured'),
-      badge: { label: getSupabaseConfig() ? t('settings.badge.on') : t('settings.badge.off'), variant: getSupabaseConfig() ? 'on' : 'off' },
-      onPress: () => setModal('cloud-sync'),
-    },
   ];
 
   return (
@@ -1129,10 +992,10 @@ export function SettingsScreen() {
           </div>
         </div>
 
-        {/* ─── Biçim & Oynatma + Cloud Sync (3'lü satır) ───────────────────── */}
+        {/* ─── Biçim & Oynatma ─────────────────────────────────────────────── */}
         <div className="mt-10">
           <SectionHeader label={t('settings.sections.format')} />
-          <div className="grid grid-cols-3 gap-5">
+          <div className="grid grid-cols-2 gap-5">
             {formatCards.map((card) => (
               <SettingsCard
                 key={card.id}
@@ -1155,14 +1018,6 @@ export function SettingsScreen() {
             </span>
             <span className="font-serif text-[19px] font-light tabular-nums text-[#E8B567] tracking-wide">
               {mac}
-            </span>
-          </div>
-          <div className="flex items-baseline gap-3">
-            <span className="text-[12px] uppercase tracking-[0.3em] text-white/45 font-semibold">
-              {t('settings.footer.device_key')}
-            </span>
-            <span className="font-serif text-[19px] font-light tabular-nums text-[#E8B567] tracking-wide">
-              {deviceKey}
             </span>
           </div>
         </div>
@@ -1243,11 +1098,6 @@ export function SettingsScreen() {
         />
       )}
 
-      {modal === 'cloud-sync' && (
-        <CloudSyncConfigModal
-          onClose={() => { setModal(null); setTimeout(() => setFocus('settings-card-cloud-0'), 50); }}
-        />
-      )}
     </FocusContext.Provider>
   );
 }
