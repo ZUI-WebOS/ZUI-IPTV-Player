@@ -140,7 +140,7 @@ function CategoryRow({
 }) {
   const setActiveCategory = useSeriesStore(s => s.setActiveCategory);
   const setFocusRef = useRef<((key: string) => void) | null>(null);
-  const showLabelUpper = category.id !== '__resume__' && category.id !== '__watchlist__';
+  const showLabelUpper = !['__recent__', '__resume__', '__watchlist__'].includes(category.id);
   const showPulse = category.id === '__resume__' && (category.hasNewEpisodes ?? false);
 
   const { ref, focused, setFocus } = useFocusableScroll({
@@ -221,10 +221,12 @@ export function SeriesCategorySidebar() {
       )
     : categories;
 
-  const specials = visible.filter(c => c.id === '__resume__' || c.id === '__watchlist__');
+  const specials = visible.filter(c =>
+    c.id === '__recent__' || c.id === '__resume__' || c.id === '__watchlist__'
+  );
   // Regular categories minus hidden ones
   const regulars = visible.filter(c =>
-    c.id !== '__resume__' && c.id !== '__watchlist__' && !hiddenCategoryIds.includes(c.id)
+    c.id !== '__recent__' && c.id !== '__resume__' && c.id !== '__watchlist__' && !hiddenCategoryIds.includes(c.id)
   );
   const orderedCategories = [...specials, ...regulars];
   const categoryFocusKeys = orderedCategories.map(c => `series-cat-${c.id}`);

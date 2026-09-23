@@ -151,7 +151,7 @@ function CategoryRow({
   });
   setFocusRef.current = setFocus;
 
-  const showLabelUpper = category.id !== '__resume__' && category.id !== '__favorites__';
+  const showLabelUpper = !['__recent__', '__resume__', '__favorites__'].includes(category.id);
 
   return (
     <div
@@ -215,10 +215,12 @@ export function MovieCategorySidebar() {
     : categories;
 
   // Specials are pinned at the top regardless of search or hidden state
-  const specials = visible.filter(c => c.id === '__resume__' || c.id === '__favorites__');
+  const specials = visible.filter(c =>
+    c.id === '__recent__' || c.id === '__resume__' || c.id === '__favorites__'
+  );
   // Regular categories minus hidden ones
   const regulars = visible.filter(c =>
-    c.id !== '__resume__' && c.id !== '__favorites__' && !hiddenCategoryIds.includes(c.id)
+    c.id !== '__recent__' && c.id !== '__resume__' && c.id !== '__favorites__' && !hiddenCategoryIds.includes(c.id)
   );
   const orderedCategories = [...specials, ...regulars];
   const categoryFocusKeys = orderedCategories.map(c => `movie-cat-${c.id}`);

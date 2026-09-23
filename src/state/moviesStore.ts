@@ -32,7 +32,8 @@ function computeVisible(
   all: Movie[],
   activeCategory: string,
   favoriteIds: string[],
-  watchProgress: Record<string, number>
+  watchProgress: Record<string, number>,
+  recentIds: string[]
 ): Movie[] {
   if (!activeCategory || activeCategory === '') return all;
   if (activeCategory === '__favorites__') {
@@ -43,6 +44,12 @@ function computeVisible(
       const p = watchProgress[m.id] ?? 0;
       return p > 0 && p < 0.99;
     });
+  }
+  if (activeCategory === '__recent__') {
+    const byId = new Map(all.map(movie => [movie.id, movie]));
+    return recentIds
+      .map(id => byId.get(id))
+      .filter((movie): movie is Movie => Boolean(movie));
   }
   // Regular Xtream category — filter by categoryId stored on each Movie
   return all.filter(m => m.categoryId === activeCategory);
@@ -62,7 +69,8 @@ function buildCategories(
   rawCats: MovieCategory[],
   allMovies: Movie[],
   favoriteIds: string[],
-  watchProgress: Record<string, number>
+  watchProgress: Record<string, number>,
+  recentIds: string[]
 ): MovieCategory[] {
   // Count movies per category
   const countMap: Record<string, number> = {};
@@ -77,6 +85,9 @@ function buildCategories(
 
   // Pinned specials
   const specials: MovieCategory[] = [];
+  if (recentIds.length > 0) {
+    specials.push({ id: '__recent__', label: 'Son İzlenen', count: recentIds.length });
+  }
   const resumeCount = Object.values(watchProgress).filter(p => p > 0 && p < 0.99).length;
   if (resumeCount > 0) {
     specials.push({ id: '__resume__', label: 'Devam Et', count: resumeCount });
@@ -98,8 +109,10 @@ type MoviesStore = {
   categories: MovieCategory[];
   activeCategory: string;
   lastFocusedMovieId: string | null;
+  recentIds: string[];
   favoriteIds: string[];
   watchProgress: Record<string, number>;   // 0–1
+  resumePoints: Record<string, { positionSeconds: number; durationSeconds: number }>;
   sortBy: MovieSort;
   categorySearch: string;
   newThisWeekCount: number;
@@ -116,6 +129,7 @@ type MoviesStore = {
   cycleSort: () => void;
   toggleFavorite: (id: string) => void;
   setWatchProgress: (id: string, progress: number) => void;
+  setPlaybackCheckpoint: (id: string, positionSeconds: number, durationSeconds: number) => void;
   toggleHiddenCategory: (id: string) => void;
   playMovie: (id: string) => void;
   openMovieDetails: (id: string) => void;
@@ -135,8 +149,10 @@ export const useMoviesStore = create<MoviesStore>()(
       categories: [],
       activeCategory: '',
       lastFocusedMovieId: null,
+      recentIds: [],
       favoriteIds: [],
       watchProgress: {},
+      resumePoints: {},
       hiddenCategoryIds: [],
       sortBy: 'added',
       categorySearch: '',
@@ -161,9 +177,9 @@ export const useMoviesStore = create<MoviesStore>()(
             getVodStreams(creds),
           ]);
 
-          const { favoriteIds, watchProgress, sortBy } = get();
+          const { favoriteIds, watchProgress, recentIds, sortBy } = get();
           const sorted = sortMovies(allMovies, sortBy);
-          const categories = buildCategories(rawCategories, sorted, favoriteIds, watchProgress);
+          const categories = buildCategories(rawCategories, sorted, favoriteIds, watchProgress, recentIds);
           const newThisWeekCount = sorted.filter(m => m.isNew).length;
 
           // Keep persisted activeCategory if it still exists; else use first category
@@ -172,9 +188,11 @@ export const useMoviesStore = create<MoviesStore>()(
           const activeCategory =
             persisted && validCats.includes(persisted)
               ? persisted
-              : (categories.find(c => c.id !== '__resume__' && c.id !== '__favorites__')?.id ?? '');
+              : (categories.find(c =>
+                  c.id !== '__recent__' && c.id !== '__resume__' && c.id !== '__favorites__'
+                )?.id ?? '');
 
-          const visibleMovies = computeVisible(sorted, activeCategory, favoriteIds, watchProgress);
+          const visibleMovies = computeVisible(sorted, activeCategory, favoriteIds, watchProgress, recentIds);
 
           set({
             allMovies: sorted,
@@ -239,6 +257,20 @@ export const useMoviesStore = create<MoviesStore>()(
         get()._updateSpecials();
       },
 
+      setPlaybackCheckpoint: (id, positionSeconds, durationSeconds) => {
+        if (!Number.isFinite(positionSeconds) || !Number.isFinite(durationSeconds) || durationSeconds <= 0) return;
+        const boundedPosition = Math.max(0, Math.min(positionSeconds, durationSeconds));
+        const progress = Math.max(0, Math.min(1, boundedPosition / durationSeconds));
+        set({
+          resumePoints: {
+            ...get().resumePoints,
+            [id]: { positionSeconds: boundedPosition, durationSeconds },
+          },
+          watchProgress: { ...get().watchProgress, [id]: progress },
+        });
+        get()._updateSpecials();
+      },
+
       // ── Playback ────────────────────────────────────────────────────────
 
       playMovie: (id) => {
@@ -259,8 +291,15 @@ export const useMoviesStore = create<MoviesStore>()(
         //    This helps when the native codec (e.g. H.265 in MKV) is unsupported.
         const hlsUrl = buildVodUrl(creds, streamId, 'm3u8');
         const candidates = ext !== 'm3u8' ? [hlsUrl] : [];
+        const checkpoint = get().resumePoints[id];
+        const resumeAtSeconds = checkpoint && checkpoint.durationSeconds > 0
+          && checkpoint.positionSeconds / checkpoint.durationSeconds < 0.95
+          ? checkpoint.positionSeconds
+          : undefined;
 
-        set({ lastFocusedMovieId: id });
+        const recentIds = [id, ...get().recentIds.filter(recentId => recentId !== id)].slice(0, 10);
+        set({ lastFocusedMovieId: id, recentIds });
+        get()._updateSpecials();
 
         usePlayerStore.getState().setSource({
           id: `vod-${id}`,
@@ -268,6 +307,8 @@ export const useMoviesStore = create<MoviesStore>()(
           url,
           streamUrlCandidates: candidates,
           sourceType: 'xtream',
+          resumeAtSeconds,
+          playbackContext: { kind: 'movie', contentId: id },
         });
         useUIStore.getState().navigate('player');
       },
@@ -280,21 +321,24 @@ export const useMoviesStore = create<MoviesStore>()(
       // ── Internal ────────────────────────────────────────────────────────
 
       _recompute: () => {
-        const { allMovies, activeCategory, favoriteIds, watchProgress, categorySearch } = get();
+        const { allMovies, activeCategory, favoriteIds, watchProgress, recentIds, categorySearch } = get();
         if (categorySearch.trim()) {
           // Search mode: override category filter, show all movies matching title
           const q = categorySearch.toLocaleLowerCase('tr');
           set({ visibleMovies: allMovies.filter(m => m.title.toLocaleLowerCase('tr').includes(q)) });
         } else {
-          set({ visibleMovies: computeVisible(allMovies, activeCategory, favoriteIds, watchProgress) });
+          set({ visibleMovies: computeVisible(allMovies, activeCategory, favoriteIds, watchProgress, recentIds) });
         }
       },
 
       _updateSpecials: () => {
-        const { categories, favoriteIds, watchProgress } = get();
+        const { categories, favoriteIds, watchProgress, recentIds } = get();
         const resumeCount = Object.values(watchProgress).filter(p => p > 0 && p < 0.99).length;
-        const regulars = categories.filter(c => c.id !== '__resume__' && c.id !== '__favorites__');
+        const regulars = categories.filter(c =>
+          c.id !== '__recent__' && c.id !== '__resume__' && c.id !== '__favorites__'
+        );
         const specials: MovieCategory[] = [];
+        if (recentIds.length > 0) specials.push({ id: '__recent__', label: 'Son İzlenen', count: recentIds.length });
         if (resumeCount > 0) specials.push({ id: '__resume__', label: 'Devam Et', count: resumeCount });
         if (favoriteIds.length > 0) specials.push({ id: '__favorites__', label: 'Favoriler', count: favoriteIds.length });
         set({ categories: [...specials, ...regulars] });
@@ -305,7 +349,9 @@ export const useMoviesStore = create<MoviesStore>()(
       name: 'zui-movies',
       partialize: (s) => ({
         favoriteIds: s.favoriteIds,
+        recentIds: s.recentIds,
         watchProgress: s.watchProgress,
+        resumePoints: s.resumePoints,
         hiddenCategoryIds: s.hiddenCategoryIds,
         sortBy: s.sortBy,
         activeCategory: s.activeCategory,

@@ -386,3 +386,26 @@ Kullanıcının büyük Xtream catalog'unu pratik kullanabilmesi: arama, kategor
 - Her fazın sonunda `DECISIONS.md`'e o fazda alınan yeni kararlar (varsa) eklenir.
 - Bir fazda kapsam genişlemesi olursa (örn. Faz 2'de "shu da olsa iyi olur" diye eklenen şey), o "olur" Faz 6 olarak ayrı bir yere yazılır, mevcut faz şişirilmez.
 - Faz aralarında refactor yapılabilir; refactor kararları `DECISIONS.md`'e işlenir.
+
+---
+
+## 1.0.1 Sonrası Yapılacaklar
+
+- [ ] **Oynatıcı altyazı kontrolünü gerçek TV'de doğrula.** Altyazı butonunun
+  açma/kapatma davranışı, odak göstergesi ve mevcut altyazılı/altyazısız
+  içeriklerdeki durumu test edilecek. Arıza görülürse önce oynatıcı olayı,
+  seçilen track ve içerik desteği ayrı ayrı ölçülecek.
+  - Kod incelemesi tamamlandı: düğme kalıcı ayarı ve HTML video `textTracks`
+    modunu değiştiriyor. Görsel sonuç için gerçek TV kabulü bekleniyor.
+- [ ] **Filmler ve Diziler ekranlarına “Son İzlenen” girişi ekle.** Canlı TV
+  ekranındaki davranış örnek alınacak; son izlenen film veya dizi/bölüm doğru
+  içerik ve devam zamanıyla açılacak. BACK sonrasında önceki ekran, kategori ve
+  kart odağı korunacak.
+  - Kod ve üretim derlemesi tamamlandı. Her bölüm için son 10 içerik izleme
+    sırasıyla saklanıyor; gerçek TV kabulü bekleniyor.
+- [ ] **Ayarlar ekranının işlev envanterini çıkar.** Bütün kart ve butonlar gerçek
+  TV'de tek tek denenerek `aktif`, `pasif/placeholder` veya `hatalı` olarak
+  sınıflandırılacak. Sonuç raporlandıktan sonra pasif/hatalı kontroller,
+  öncelik ve kullanıcı onayı sırasıyla çalışır hâle getirilecek.
+  - Kaynak kod envanteri `docs/SETTINGS_FUNCTION_AUDIT.md` dosyasına yazıldı;
+    bulunan D-pad odak kusurları düzeltildi. Gerçek TV kabulü bekleniyor.

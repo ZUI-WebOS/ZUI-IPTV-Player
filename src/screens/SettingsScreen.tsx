@@ -374,7 +374,7 @@ function HideVodCategoriesModal({ onClose }: { onClose: () => void }) {
   const toggleHidden = useMoviesStore((s) => s.toggleHiddenCategory);
 
   const regulars = allCategories.filter(
-    (c) => c.id !== '__resume__' && c.id !== '__favorites__'
+    (c) => c.id !== '__recent__' && c.id !== '__resume__' && c.id !== '__favorites__'
   );
 
   return (
@@ -421,7 +421,7 @@ function HideSeriesCategoriesModal({ onClose }: { onClose: () => void }) {
   const toggleHidden = useSeriesStore((s) => s.toggleHiddenCategory);
 
   const regulars = allCategories.filter(
-    (c) => c.id !== '__resume__' && c.id !== '__watchlist__'
+    (c) => c.id !== '__recent__' && c.id !== '__resume__' && c.id !== '__watchlist__'
   );
 
   return (
@@ -473,17 +473,20 @@ const LANGUAGES: { code: Language; name: string; tag: string }[] = [
 
 function LangItem({
   code, name, tag, isSelected, isLast, onSelect,
+  focusKeyPrefix = 'lang-item', closeFocusKey = 'lang-modal-close',
 }: {
   code: string; name: string; tag: string;
   isSelected: boolean; isLast: boolean;
   onSelect: () => void;
+  focusKeyPrefix?: string;
+  closeFocusKey?: string;
 }) {
   const { ref, focused, setFocus } = useFocusable({
-    focusKey: `lang-item-${code}`,
+    focusKey: `${focusKeyPrefix}-${code}`,
     onEnterPress: onSelect,
     onArrowPress: (dir) => {
       // Son satırdan DOWN → Kapat butonuna
-      if (dir === 'down' && isLast) { setFocus('lang-modal-close'); return false; }
+      if (dir === 'down' && isLast) { setFocus(closeFocusKey); return false; }
       return true;
     },
   });
@@ -606,6 +609,8 @@ function SubtitleSettingsModal({ onClose }: { onClose: () => void }) {
             tag={t(opt.labelKey).slice(0, 1).toUpperCase()}
             isSelected={subtitleSize === opt.value}
             isLast={idx === SUBTITLE_SIZES.length - 1}
+            focusKeyPrefix="subtitle-size"
+            closeFocusKey="subtitle-close"
             onSelect={() => { setSubtitleSize(opt.value); }}
           />
         ))}
@@ -638,6 +643,39 @@ function SubtitleToggleBtn({
       ].join(' ')}
     >
       {label}
+    </button>
+  );
+}
+
+function ModalActionBtn({
+  focusKey: btnKey,
+  onPress,
+  children,
+  tone = 'accent',
+}: {
+  focusKey: string;
+  onPress: () => void;
+  children: React.ReactNode;
+  tone?: 'accent' | 'danger' | 'neutral';
+}) {
+  const { ref, focused } = useFocusable({ focusKey: btnKey, onEnterPress: onPress });
+  const toneClass = tone === 'danger'
+    ? 'bg-red-500/10 border-red-500/25 text-red-400'
+    : tone === 'neutral'
+      ? 'bg-white/[0.06] border-white/[0.08] text-white/60'
+      : 'bg-[#E8B567]/15 border-[#E8B567]/35 text-[#E8B567]';
+
+  return (
+    <button
+      ref={ref as React.RefObject<HTMLButtonElement>}
+      onClick={onPress}
+      className={[
+        'px-4 py-2 rounded-xl border text-[14px] transition-all',
+        toneClass,
+        focused ? 'outline outline-2 outline-white/35 outline-offset-2 scale-[1.03]' : '',
+      ].join(' ')}
+    >
+      {children}
     </button>
   );
 }
@@ -677,33 +715,25 @@ function ParentalDetailModal({
       <div className="flex flex-wrap gap-3 mb-6">
         {!pinHash ? (
           /* ── PIN yokken: sadece Belirle ── */
-          <button
-            onClick={onCreatePin}
-            className="px-4 py-2 rounded-xl bg-[#E8B567]/15 border border-[#E8B567]/35 text-[#E8B567] text-[14px] font-medium hover:bg-[#E8B567]/25 transition-colors"
-          >
+          <ModalActionBtn focusKey="parental-create-pin" onPress={onCreatePin}>
             {t('modal.parental.set_pin')}
-          </button>
+          </ModalActionBtn>
         ) : (
           /* ── PIN varken: Değiştir + Kaldır + Otomatik ── */
           <>
-            <button
-              onClick={onChangePin}
-              className="px-4 py-2 rounded-xl bg-[#E8B567]/15 border border-[#E8B567]/35 text-[#E8B567] text-[14px] font-medium hover:bg-[#E8B567]/25 transition-colors"
-            >
+            <ModalActionBtn focusKey="parental-change-pin" onPress={onChangePin}>
               {t('modal.parental.change_pin')}
-            </button>
-            <button
-              onClick={onRemovePin}
-              className="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/25 text-red-400 text-[14px] hover:bg-red-500/20 transition-colors"
-            >
+            </ModalActionBtn>
+            <ModalActionBtn focusKey="parental-remove-pin" onPress={onRemovePin} tone="danger">
               {t('modal.parental.remove_pin')}
-            </button>
-            <button
-              onClick={() => void autoDetect(allCategories.map((c) => c.name))}
-              className="px-4 py-2 rounded-xl bg-white/[0.06] text-white/60 text-[14px] hover:bg-white/[0.1] transition-colors"
+            </ModalActionBtn>
+            <ModalActionBtn
+              focusKey="parental-auto-mark"
+              onPress={() => void autoDetect(allCategories.map((c) => c.name))}
+              tone="neutral"
             >
               {t('modal.parental.auto_mark')}
-            </button>
+            </ModalActionBtn>
           </>
         )}
       </div>
@@ -788,14 +818,28 @@ export function SettingsScreen() {
   }, [t]);
 
   const handleClearMovieHistory = useCallback(() => {
-    useMoviesStore.setState({ watchProgress: {} });
+    const moviesState = useMoviesStore.getState();
+    if (moviesState.activeCategory === '__recent__' || moviesState.activeCategory === '__resume__') {
+      const firstRegular = moviesState.categories.find(category =>
+        category.id !== '__recent__' && category.id !== '__resume__' && category.id !== '__favorites__'
+      );
+      moviesState.setActiveCategory(firstRegular?.id ?? '');
+    }
+    useMoviesStore.setState({ watchProgress: {}, recentIds: [] });
     useMoviesStore.getState()._updateSpecials();
     useMoviesStore.getState()._recompute();
     useToast.getState().show(t('settings.history_movies.cleared'));
   }, [t]);
 
   const handleClearSeriesHistory = useCallback(() => {
-    useSeriesStore.setState({ watchProgress: {}, currentEpisode: {} });
+    const seriesState = useSeriesStore.getState();
+    if (seriesState.activeCategory === '__recent__' || seriesState.activeCategory === '__resume__') {
+      const firstRegular = seriesState.categories.find(category =>
+        category.id !== '__recent__' && category.id !== '__resume__' && category.id !== '__watchlist__'
+      );
+      seriesState.setActiveCategory(firstRegular?.id ?? '');
+    }
+    useSeriesStore.setState({ watchProgress: {}, currentEpisode: {}, recentIds: [] });
     useSeriesStore.getState()._updateSpecials();
     useSeriesStore.getState()._recompute();
     useToast.getState().show(t('settings.history_series.cleared'));
@@ -914,8 +958,8 @@ export function SettingsScreen() {
       id: 'format-2',
       icon: <IconRefresh />,
       title: t('settings.auto_refresh.title'),
-      subtitle: t('settings.auto_refresh.subtitle'),
-      badge: { label: t('settings.badge.on'), variant: 'on' },
+      subtitle: t('settings.v2_coming'),
+      badge: { label: t('settings.badge.off'), variant: 'off' },
       onPress: v2Stub,
     },
   ];

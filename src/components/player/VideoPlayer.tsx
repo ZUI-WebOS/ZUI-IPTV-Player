@@ -4,6 +4,7 @@ import { useFocusable, FocusContext } from '@noriginmedia/norigin-spatial-naviga
 import { usePlayerStore } from '@/state/playerStore';
 import { useUIStore } from '@/state/uiStore';
 import { useSeriesStore } from '@/state/seriesStore';
+import { useMoviesStore } from '@/state/moviesStore';
 import { useSettingsStore, SUBTITLE_SIZE_PX } from '@/state/settingsStore';
 import { usePlayer } from '@/hooks/usePlayer';
 import { usePlayerController } from '@/hooks/usePlayerController';
@@ -28,6 +29,14 @@ export function VideoPlayer() {
   const playingEpisode = useSeriesStore((s) => s.playingEpisode);
   const canPlayAdjacentEpisode = useSeriesStore((s) => s.canPlayAdjacentEpisode);
   const playAdjacentEpisode = useSeriesStore((s) => s.playAdjacentEpisode);
+  const [resumeHandledSourceId, setResumeHandledSourceId] = useState<string | null>(null);
+  const [pendingResumeSeconds, setPendingResumeSeconds] = useState<number | null>(null);
+  const savedResumeSeconds = currentSource?.resumeAtSeconds ?? 0;
+  const resumeChoicePending = Boolean(
+    currentSource?.id
+      && savedResumeSeconds >= 30
+      && resumeHandledSourceId !== currentSource.id
+  );
 
   const navigate = useUIStore((s) => s.navigate);
   const lastMainScreen = useUIStore((s) => s.lastMainScreen);
@@ -40,10 +49,36 @@ export function VideoPlayer() {
     saveLastFocusedChild: true,
     autoRestoreFocus: false,
   });
+  const handleResume = useCallback(() => {
+    const video = videoRef.current;
+    video?.pause();
+    setResumeHandledSourceId(currentSource?.id ?? null);
+    setPendingResumeSeconds(savedResumeSeconds);
+  }, [currentSource?.id, savedResumeSeconds]);
+  const handleRestart = useCallback(() => {
+    const video = videoRef.current;
+    setResumeHandledSourceId(currentSource?.id ?? null);
+    setPendingResumeSeconds(null);
+    if (video) {
+      try { video.currentTime = 0; } catch { /* Stream henüz hazır değilse zaten 0'dan açılır. */ }
+      void video.play();
+    }
+  }, [currentSource?.id]);
+  const { ref: resumeRef, focused: resumeFocused } = useFocusable({
+    focusKey: 'PLAYER_RESUME',
+    onEnterPress: handleResume,
+  });
+  const { ref: restartRef, focused: restartFocused } = useFocusable({
+    focusKey: 'PLAYER_RESTART',
+    onEnterPress: handleRestart,
+  });
   useEffect(() => {
-    const timer = setTimeout(() => setFocus('OSD_PLAY_PAUSE'), 80);
+    const timer = setTimeout(
+      () => setFocus(resumeChoicePending ? 'PLAYER_RESUME' : 'OSD_PLAY_PAUSE'),
+      80,
+    );
     return () => clearTimeout(timer);
-  }, [currentSource?.id, setFocus]);
+  }, [currentSource?.id, resumeChoicePending, setFocus]);
 
   const [autoNextSeconds, setAutoNextSeconds] = useState<number | null>(null);
   const cancelAutoNext = () => setAutoNextSeconds(null);
@@ -119,6 +154,68 @@ export function VideoPlayer() {
     enabled: false,
   });
 
+  // Resume seçimi yapılana kadar içeriğin arka planda ilerlemesini engelle.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !resumeChoicePending) return;
+    const keepPaused = () => video.pause();
+    video.pause();
+    video.addEventListener('play', keepPaused);
+    return () => video.removeEventListener('play', keepPaused);
+  }, [resumeChoicePending, currentSource?.id]);
+
+  // Bazı webOS akışlarında seekable aralığı metadata'dan sonra oluşur. Devam Et
+  // komutunu aralık hazır olana kadar beklet, sonra tek sefer uygula.
+  useEffect(() => {
+    if (pendingResumeSeconds === null || !playerController.canSeek || playerController.duration <= 0) return;
+    const ratio = pendingResumeSeconds / playerController.duration;
+    if (playerController.seekToRatio(ratio)) {
+      setPendingResumeSeconds(null);
+      playerController.play();
+      setTimeout(() => setFocus('OSD_PLAY_PAUSE'), 0);
+    }
+  }, [pendingResumeSeconds, playerController, setFocus]);
+
+  const persistPlaybackPosition = useCallback((completed = false) => {
+    const video = videoRef.current;
+    const context = currentSource?.playbackContext;
+    if (!video || !context || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    const position = completed ? video.duration : video.currentTime;
+    if (!completed && (!Number.isFinite(position) || position < 5)) return;
+
+    if (context.kind === 'movie') {
+      useMoviesStore.getState().setPlaybackCheckpoint(context.contentId, position, video.duration);
+    } else {
+      useSeriesStore.getState().setPlaybackCheckpoint(context, position, video.duration);
+    }
+  }, [currentSource?.playbackContext]);
+
+  // Yerel depolamayı yormamak için oynarken 5 saniyede bir; duraklatma, bitiş,
+  // BACK ve unmount anlarında ayrıca kesin checkpoint yaz.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !currentSource?.playbackContext) return;
+    let lastSavedSecond = -1;
+    const onTimeUpdate = () => {
+      const bucket = Math.floor(video.currentTime / 5);
+      if (bucket > lastSavedSecond) {
+        lastSavedSecond = bucket;
+        persistPlaybackPosition(false);
+      }
+    };
+    const onPause = () => persistPlaybackPosition(false);
+    const onEnded = () => persistPlaybackPosition(true);
+    video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('ended', onEnded);
+    return () => {
+      persistPlaybackPosition(false);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('ended', onEnded);
+    };
+  }, [currentSource?.id, currentSource?.playbackContext, persistPlaybackPosition]);
+
   // ─── Post-attach non-recoverable error → persistent error overlay ───────────
   // strategy.onError() fires mid-stream (after successful attach). Fatal
   // mid-stream errors have no URL fallback left — show persistent overlay.
@@ -165,6 +262,7 @@ export function VideoPlayer() {
   }, [currentSource?.id]);
 
   const handleBack = () => {
+    persistPlaybackPosition(false);
     setPersistentError(null);
     clearError(null);
     navigate(lastMainScreen);
@@ -189,8 +287,45 @@ export function VideoPlayer() {
         ref={videoRef}
         className="absolute inset-0 w-full h-full"
         playsInline
-        autoPlay
+        autoPlay={!resumeChoicePending}
       />
+
+      {resumeChoicePending && (
+        <div className="absolute inset-0 z-40 grid place-items-center bg-black/70">
+          <div className="w-[600px] rounded-2xl border border-[#E8B567]/35 bg-[#131110]/95 px-10 py-9 text-center shadow-[0_30px_80px_-25px_#000]">
+            <div className="font-serif text-[30px] text-white">Kaldığınız yerden devam edilsin mi?</div>
+            <div className="mt-2 text-[13px] tracking-[0.16em] text-white/55">
+              {Math.floor(savedResumeSeconds / 60)}. dakikadan devam edebilirsiniz
+            </div>
+            <div className="mt-7 flex justify-center gap-4">
+              <button
+                ref={resumeRef as React.RefObject<HTMLButtonElement>}
+                onClick={handleResume}
+                className={[
+                  'h-12 min-w-[170px] rounded-full border px-7 text-[13px] font-semibold transition-all',
+                  resumeFocused
+                    ? 'border-[#E8B567] bg-[#E8B567] text-[#17110A] shadow-[0_0_24px_-5px_#E8B567]'
+                    : 'border-white/20 text-white/70',
+                ].join(' ')}
+              >
+                Devam Et
+              </button>
+              <button
+                ref={restartRef as React.RefObject<HTMLButtonElement>}
+                onClick={handleRestart}
+                className={[
+                  'h-12 min-w-[170px] rounded-full border px-7 text-[13px] font-semibold transition-all',
+                  restartFocused
+                    ? 'border-[#E8B567] bg-[#E8B567] text-[#17110A] shadow-[0_0_24px_-5px_#E8B567]'
+                    : 'border-white/20 text-white/70',
+                ].join(' ')}
+              >
+                Baştan İzle
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {playerState === 'loading' && !persistentError && (
         <div className="absolute inset-0">
