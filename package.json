@@ -36,7 +36,7 @@
     "@types/react-window": "^2.0.0",
     "@vitejs/plugin-react": "^4.0.0",
     "autoprefixer": "^10.4.0",
-    "postcss": "^8.4.0",
+    "postcss": "^8.5.28",
     "shx": "^0.3.4",
     "tailwindcss": "^3.4.0",
     "terser": "^5.47.1",
